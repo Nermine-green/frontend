@@ -16,6 +16,13 @@ const nextConfig: NextConfig = {
         port: '',
         pathname: '/**',
       },
+       // Add other domains if you plan to use external images
+       // {
+       //   protocol: 'https',
+       //   hostname: 'example.com',
+       //   port: '',
+       //   pathname: '/images/**',
+       // },
     ],
   },
 };
