@@ -103,4 +103,3 @@ export async function getEquipmentPowerConsumption(
 // TODO: Implement actual CSV parsing logic if required.
 // The parsing logic should handle the new method strings (e.g., '2-1: A')
 // and potentially map them to power values based on the equipment column.
-```
