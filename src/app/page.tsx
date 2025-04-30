@@ -334,7 +334,20 @@ export default function Home() {
       standard: 'IEC 60068', // Default standard
       initialTemp: INITIAL_RECOVERY_TEMP,
       recoveryTemp: INITIAL_RECOVERY_TEMP,
-      // Default other fields to undefined or appropriate values if needed
+      // Initialize number fields that can be optional to undefined or a default number
+      lowTemp: undefined,
+      highTemp: undefined,
+      rateOfChange: undefined,
+      durationHours: undefined,
+      durationCycles: undefined,
+      lowTemp1: undefined,
+      highTemp1: undefined,
+      rateOfChange1: undefined,
+      durationHours1: undefined,
+      durationCycles1: undefined,
+      durationHours2: undefined,
+      equipmentAgeYears: undefined,
+      customPowerKw: undefined,
     },
      mode: 'onChange', // Validate on change for better UX
   });
@@ -570,6 +583,17 @@ export default function Home() {
     }
   }
 
+   // --- Helper function to handle number input changes ---
+  const handleNumberInputChange = (
+    field: any, // react-hook-form field object
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const value = e.target.value;
+    // Allow empty string or convert to number
+    field.onChange(value === '' ? undefined : Number(value));
+  };
+
+
   // --- Conditional Rendering Logic for Method Specific Fields ---
     const renderMethodSpecificFields = (
         methodValue: string | undefined,
@@ -622,7 +646,7 @@ export default function Home() {
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Low Temperature *</FormLabel>
-                  <Select onValueChange={(v) => field.onChange(Number(v))} value={field.value?.toString()}>
+                  <Select onValueChange={(v) => field.onChange(Number(v))} value={field.value?.toString() ?? ''}>
                     <FormControl><SelectTrigger><SelectValue placeholder="Select Low Temp" /></SelectTrigger></FormControl>
                     <SelectContent>{tempOptions(-65, -10, 5).map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}</SelectContent>
                   </Select>
@@ -632,7 +656,7 @@ export default function Home() {
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Duration (Hours) *</FormLabel>
-                  <FormControl><Input type="number" min="1" step="0.1" placeholder="Min 1 hour" {...field} onChange={e => field.onChange(Number(e.target.value))}/></FormControl>
+                  <FormControl><Input type="number" min="1" step="0.1" placeholder="Min 1 hour" {...field} value={field.value ?? ''} onChange={(e) => handleNumberInputChange(field, e)}/></FormControl>
                   <FormMessage />
                 </FormItem> )} />
           </>
@@ -646,7 +670,7 @@ export default function Home() {
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>High Temperature *</FormLabel>
-                  <Select onValueChange={(v) => field.onChange(Number(v))} value={field.value?.toString()}>
+                  <Select onValueChange={(v) => field.onChange(Number(v))} value={field.value?.toString() ?? ''}>
                     <FormControl><SelectTrigger><SelectValue placeholder="Select High Temp" /></SelectTrigger></FormControl>
                     <SelectContent>{tempOptions(40, 120, 5).map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}</SelectContent>
                   </Select>
@@ -656,7 +680,7 @@ export default function Home() {
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Duration (Hours) *</FormLabel>
-                  <FormControl><Input type="number" min="1" step="0.1" placeholder="Min 1 hour" {...field} onChange={e => field.onChange(Number(e.target.value))}/></FormControl>
+                  <FormControl><Input type="number" min="1" step="0.1" placeholder="Min 1 hour" {...field} value={field.value ?? ''} onChange={(e) => handleNumberInputChange(field, e)}/></FormControl>
                   <FormMessage />
                 </FormItem> )} />
           </>
@@ -670,7 +694,7 @@ export default function Home() {
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Low Temperature *</FormLabel>
-                  <Select onValueChange={(v) => field.onChange(Number(v))} value={field.value?.toString()}>
+                  <Select onValueChange={(v) => field.onChange(Number(v))} value={field.value?.toString() ?? ''}>
                      <FormControl><SelectTrigger><SelectValue placeholder="Select Low Temp" /></SelectTrigger></FormControl>
                      <SelectContent>{tempOptions(-65, 10, 5).map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}</SelectContent>
                   </Select>
@@ -680,7 +704,7 @@ export default function Home() {
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>High Temperature *</FormLabel>
-                  <Select onValueChange={(v) => field.onChange(Number(v))} value={field.value?.toString()}>
+                  <Select onValueChange={(v) => field.onChange(Number(v))} value={field.value?.toString() ?? ''}>
                      <FormControl><SelectTrigger><SelectValue placeholder="Select High Temp" /></SelectTrigger></FormControl>
                      <SelectContent>{tempOptions(40, 120, 5).map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}</SelectContent>
                   </Select>
@@ -690,7 +714,7 @@ export default function Home() {
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Rate of Change (°C/min) *</FormLabel>
-                  <Select onValueChange={(v) => field.onChange(Number(v))} value={field.value?.toString()}>
+                  <Select onValueChange={(v) => field.onChange(Number(v))} value={field.value?.toString() ?? ''}>
                     <FormControl><SelectTrigger><SelectValue placeholder="Select Rate" /></SelectTrigger></FormControl>
                     <SelectContent>{rateOptions(1, 20, 1).map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}</SelectContent>
                   </Select>
@@ -700,7 +724,7 @@ export default function Home() {
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Duration (Hours) *</FormLabel>
-                  <FormControl><Input type="number" min="1" step="0.1" placeholder="Min 1 hour" {...field} onChange={e => field.onChange(Number(e.target.value))}/></FormControl>
+                  <FormControl><Input type="number" min="1" step="0.1" placeholder="Min 1 hour" {...field} value={field.value ?? ''} onChange={(e) => handleNumberInputChange(field, e)}/></FormControl>
                   <FormMessage />
                 </FormItem> )} />
           </>
@@ -714,7 +738,7 @@ export default function Home() {
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Low Temperature *</FormLabel>
-                   <Select onValueChange={(v) => field.onChange(Number(v))} value={field.value?.toString()}>
+                   <Select onValueChange={(v) => field.onChange(Number(v))} value={field.value?.toString() ?? ''}>
                      <FormControl><SelectTrigger><SelectValue placeholder="Select Low Temp" /></SelectTrigger></FormControl>
                      <SelectContent>{tempOptions(-65, 10, 5).map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}</SelectContent>
                    </Select>
@@ -724,7 +748,7 @@ export default function Home() {
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>High Temperature *</FormLabel>
-                   <Select onValueChange={(v) => field.onChange(Number(v))} value={field.value?.toString()}>
+                   <Select onValueChange={(v) => field.onChange(Number(v))} value={field.value?.toString() ?? ''}>
                      <FormControl><SelectTrigger><SelectValue placeholder="Select High Temp" /></SelectTrigger></FormControl>
                      <SelectContent>{tempOptions(40, 120, 5).map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}</SelectContent>
                    </Select>
@@ -734,7 +758,7 @@ export default function Home() {
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Duration (Hours) *</FormLabel>
-                  <FormControl><Input type="number" min="1" step="0.1" placeholder="Min 1 hour" {...field} onChange={e => field.onChange(Number(e.target.value))}/></FormControl>
+                  <FormControl><Input type="number" min="1" step="0.1" placeholder="Min 1 hour" {...field} value={field.value ?? ''} onChange={(e) => handleNumberInputChange(field, e)}/></FormControl>
                   <FormMessage />
                 </FormItem> )} />
           </>
@@ -748,7 +772,7 @@ export default function Home() {
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>High Temperature *</FormLabel>
-                  <Select onValueChange={(v) => field.onChange(Number(v))} value={field.value?.toString()}>
+                  <Select onValueChange={(v) => field.onChange(Number(v))} value={field.value?.toString() ?? ''}>
                     <FormControl><SelectTrigger><SelectValue placeholder="Select High Temp" /></SelectTrigger></FormControl>
                     <SelectContent>
                         <SelectItem value="55">55°C</SelectItem>
@@ -771,7 +795,7 @@ export default function Home() {
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Duration (Cycles) *</FormLabel>
-                  <FormControl><Input type="number" min="1" step="1" placeholder="Min 1 cycle" {...field} onChange={e => field.onChange(Number(e.target.value))}/></FormControl>
+                  <FormControl><Input type="number" min="1" step="1" placeholder="Min 1 cycle" {...field} value={field.value ?? ''} onChange={(e) => handleNumberInputChange(field, e)}/></FormControl>
                   <FormDescription>1 cycle = 24 hours</FormDescription>
                   <FormMessage />
                 </FormItem> )} />
@@ -791,7 +815,7 @@ export default function Home() {
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>High Temperature *</FormLabel>
-                  <Select onValueChange={(v) => field.onChange(Number(v))} value={field.value?.toString()}>
+                  <Select onValueChange={(v) => field.onChange(Number(v))} value={field.value?.toString() ?? ''}>
                     <FormControl><SelectTrigger><SelectValue placeholder="Select High Temp" /></SelectTrigger></FormControl>
                     <SelectContent>
                         <SelectItem value="30">30°C</SelectItem>
@@ -812,7 +836,7 @@ export default function Home() {
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Duration (Cycles) *</FormLabel>
-                  <FormControl><Input type="number" min="10" step="1" placeholder="Min 10 cycles" {...field} onChange={e => field.onChange(Number(e.target.value))}/></FormControl>
+                  <FormControl><Input type="number" min="10" step="1" placeholder="Min 10 cycles" {...field} value={field.value ?? ''} onChange={(e) => handleNumberInputChange(field, e)}/></FormControl>
                   <FormDescription>Min 10 cycles (5 cooling, 5 non-cooling). 1 cycle ≈ 24h.</FormDescription>
                   <FormMessage />
                 </FormItem> )} />
@@ -827,7 +851,7 @@ export default function Home() {
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>High Temperature *</FormLabel>
-                  <Select onValueChange={(v) => field.onChange(Number(v))} value={field.value?.toString()}>
+                  <Select onValueChange={(v) => field.onChange(Number(v))} value={field.value?.toString() ?? ''}>
                     <FormControl><SelectTrigger><SelectValue placeholder="Select High Temp" /></SelectTrigger></FormControl>
                     <SelectContent>
                         <SelectItem value="30">30°C</SelectItem>
@@ -841,7 +865,7 @@ export default function Home() {
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Duration (Hours) *</FormLabel>
-                  <FormControl><Input type="number" min="1" step="0.1" placeholder="Min 1 hour" {...field} onChange={e => field.onChange(Number(e.target.value))}/></FormControl>
+                  <FormControl><Input type="number" min="1" step="0.1" placeholder="Min 1 hour" {...field} value={field.value ?? ''} onChange={(e) => handleNumberInputChange(field, e)}/></FormControl>
                   <FormMessage />
                 </FormItem> )} />
           </>
@@ -868,7 +892,7 @@ export default function Home() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Duration (Hours) *</FormLabel>
-                      <FormControl><Input type="number" min="0.1" step="0.1" placeholder="Min 0.1 hours" {...field} onChange={e => field.onChange(Number(e.target.value))}/></FormControl>
+                      <FormControl><Input type="number" min="0.1" step="0.1" placeholder="Min 0.1 hours" {...field} value={field.value ?? ''} onChange={(e) => handleNumberInputChange(field, e)}/></FormControl>
                       <FormMessage />
                     </FormItem> )} />
             </>
@@ -1132,7 +1156,7 @@ export default function Home() {
                                 render={({ field }) => (
                                   <FormItem>
                                     <FormLabel>Estimated Power (kW) *</FormLabel>
-                                    <FormControl><Input type="number" step="0.1" placeholder="Enter power in kW" {...field} onChange={e => field.onChange(Number(e.target.value))}/></FormControl>
+                                    <FormControl><Input type="number" step="0.1" placeholder="Enter power in kW" {...field} value={field.value ?? ''} onChange={(e) => handleNumberInputChange(field, e)}/></FormControl>
                                     <FormMessage />
                                   </FormItem>
                                 )}
@@ -1145,7 +1169,7 @@ export default function Home() {
                                         render={({ field }) => (
                                         <FormItem>
                                             <FormLabel>Duration (Hours) *</FormLabel>
-                                            <FormControl><Input type="number" min="0.1" step="0.1" placeholder="Enter duration" {...field} onChange={e => field.onChange(Number(e.target.value))}/></FormControl>
+                                            <FormControl><Input type="number" min="0.1" step="0.1" placeholder="Enter duration" {...field} value={field.value ?? ''} onChange={(e) => handleNumberInputChange(field, e)}/></FormControl>
                                             <FormMessage />
                                         </FormItem>
                                         )}
@@ -1157,14 +1181,14 @@ export default function Home() {
                                             render={({ field }) => (
                                             <FormItem>
                                                 <FormLabel>Part 1 Duration (Hours) *</FormLabel>
-                                                <FormControl><Input type="number" min="0.1" step="0.1" placeholder="Duration 1" {...field} onChange={e => field.onChange(Number(e.target.value))}/></FormControl>
+                                                <FormControl><Input type="number" min="0.1" step="0.1" placeholder="Duration 1" {...field} value={field.value ?? ''} onChange={(e) => handleNumberInputChange(field, e)}/></FormControl>
                                                 <FormMessage />
                                             </FormItem> )} />
                                          <FormField control={form.control} name="durationHours2"
                                              render={({ field }) => (
                                              <FormItem>
                                                  <FormLabel>Part 2 Duration (Hours) *</FormLabel>
-                                                 <FormControl><Input type="number" min="0.1" step="0.1" placeholder="Duration 2" {...field} onChange={e => field.onChange(Number(e.target.value))}/></FormControl>
+                                                 <FormControl><Input type="number" min="0.1" step="0.1" placeholder="Duration 2" {...field} value={field.value ?? ''} onChange={(e) => handleNumberInputChange(field, e)}/></FormControl>
                                                  <FormMessage />
                                              </FormItem> )} />
                                              <FormDescription>Total duration assumed as the maximum of Part 1 and Part 2.</FormDescription>
@@ -1234,9 +1258,8 @@ export default function Home() {
                             <FormLabel>Equipment Age (Years)</FormLabel>
                             <FormControl>
                               <Input type="number" min="0" placeholder="Enter equipment age" {...field}
-                              // Ensure value is handled correctly (convert potential null/undefined)
-                              value={field.value ?? ''}
-                              onChange={e => field.onChange(e.target.value === '' ? undefined : Number(e.target.value))}
+                              value={field.value ?? ''} // Use empty string for undefined
+                              onChange={(e) => handleNumberInputChange(field, e)}
                               />
                             </FormControl>
                             <FormMessage />
