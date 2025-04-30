@@ -2,6 +2,7 @@
 'use client';
 
 import * as React from 'react';
+import type { FieldPath } from 'react-hook-form'; // Import FieldPath
 import { useState, useEffect } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm, Controller } from 'react-hook-form';
@@ -37,6 +38,7 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label'; // Ensure Label is imported
 import {
   Select,
   SelectContent,
@@ -852,7 +854,7 @@ export default function Home() {
         const currentAxisName = isCombinedPart && partNumber === 2 ? 'vibrationAxis2' : 'vibrationAxis';
         return (
             <>
-                 <FormField control={form.control} name={currentAxisName}
+                 <FormField control={form.control} name={currentAxisName as FieldPath<FormValues>}
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Vibration Axis *</FormLabel>
