@@ -15,93 +15,70 @@ const PredictMaintenanceCostsInputSchema = z.object({
   historicalMaintenanceData: z
     .string()
     .describe(
-      'Historical maintenance data, as a data URI that must include a MIME type and use Base64 encoding. Expected format: \'data:<mimetype>;base64,<encoded_data>\'.' + 
-      'This data should include details about past maintenance activities, costs, and fluid replacements.'
+      'Historical maintenance data as a CSV file, encoded as a data URI. Must include MIME type (e.g., text/csv) and use Base64 encoding. ' +
+      'Expected format: \'data:text/csv;base64,<encoded_data>\'. ' +
+      'The CSV should contain details like dates, maintenance activities performed, costs incurred (specify currency if possible), parts replaced, and fluid replacements.'
     ),
   equipmentAgeYears: z
     .number()
     .describe('The age of the equipment in years.'),
   equipmentType: z
     .string()
-    .describe('The type of equipment (e.g., thermal chamber, vibrating pot).'),
+    .describe('The type of equipment (e.g., Thermal Chamber, Vibrating Pot).'),
+   // Optional: Add more context if available and useful for the AI
+   // averageUsageHoursPerWeek: z.number().optional().describe('Estimated average weekly usage hours.'),
+   // lastMajorOverhaulDate: z.string().optional().describe('Date of the last major overhaul (YYYY-MM-DD).'),
 });
 export type PredictMaintenanceCostsInput = z.infer<typeof PredictMaintenanceCostsInputSchema>;
 
 const PredictMaintenanceCostsOutputSchema = z.object({
   predictedMaintenanceCost: z
     .number()
-    .describe('The predicted maintenance cost for the next year in Euros.'),
+    .describe('The predicted total maintenance cost (excluding fluids) for the next year in Euros.'),
   fluidReplacementCost: z
     .number()
-    .describe('The predicted cost for fluid replacements in the next year in Euros.'),
+    .describe('The predicted cost specifically for fluid replacements in the next year in Euros.'),
   reliabilityScore: z
     .number()
-    .describe("A score (0-100) representing the equipment's reliability based on historical maintenance."),
+    .min(0).max(100) // Ensure score is within range
+    .describe("A score from 0 (very unreliable) to 100 (very reliable) representing the equipment's predicted reliability based on historical maintenance patterns and age."),
   suggestedMaintenanceActions: z
     .string()
-    .describe('Suggested maintenance actions to improve reliability and reduce costs.'),
+    .describe('Specific, actionable maintenance suggestions to improve reliability and potentially reduce future costs (e.g., "Inspect vibration dampers quarterly", "Replace coolant filter based on usage").'),
 });
 export type PredictMaintenanceCostsOutput = z.infer<typeof PredictMaintenanceCostsOutputSchema>;
 
 export async function predictMaintenanceCosts(
   input: PredictMaintenanceCostsInput
 ): Promise<PredictMaintenanceCostsOutput> {
+  // Add basic validation or logging if needed before calling the flow
+  console.log("Predicting maintenance costs for:", input.equipmentType, "Age:", input.equipmentAgeYears);
   return predictMaintenanceCostsFlow(input);
 }
 
 const predictMaintenanceCostsPrompt = ai.definePrompt({
   name: 'predictMaintenanceCostsPrompt',
-  input: {
-    schema: z.object({
-      historicalMaintenanceData: z
-        .string()
-        .describe(
-          'Historical maintenance data, as a data URI that must include a MIME type and use Base64 encoding. Expected format: \'data:<mimetype>;base64,<encoded_data>\'.' + 
-          'This data should include details about past maintenance activities, costs, and fluid replacements.'
-        ),
-      equipmentAgeYears: z
-        .number()
-        .describe('The age of the equipment in years.'),
-      equipmentType: z
-        .string()
-        .describe('The type of equipment (e.g., thermal chamber, vibrating pot).'),
-    }),
-  },
-  output: {
-    schema: z.object({
-      predictedMaintenanceCost: z
-        .number()
-        .describe('The predicted maintenance cost for the next year in Euros.'),
-      fluidReplacementCost: z
-        .number()
-        .describe('The predicted cost for fluid replacements in the next year in Euros.'),
-      reliabilityScore: z
-        .number()
-        .describe("A score (0-100) representing the equipment's reliability based on historical maintenance."),
-      suggestedMaintenanceActions: z
-        .string()
-        .describe('Suggested maintenance actions to improve reliability and reduce costs.'),
-    }),
-  },
-  prompt: `You are an AI assistant specializing in predicting maintenance costs for laboratory equipment. 
+  input: { schema: PredictMaintenanceCostsInputSchema }, // Use the full schema here
+  output: { schema: PredictMaintenanceCostsOutputSchema }, // Use the full schema here
+  prompt: `You are an AI expert specializing in predictive maintenance for laboratory testing equipment, focusing on cost prediction and reliability assessment.
 
-  Analyze the historical maintenance data provided, considering the equipment's age and type, to predict future costs. 
+  Analyze the provided historical maintenance data (CSV format), considering the equipment's specific type and age. Your goal is to predict future costs and provide actionable insights.
 
-  Provide a reliability score based on the provided maintenance data.
+  **Input Data:**
+  - Equipment Type: {{{equipmentType}}}
+  - Equipment Age: {{{equipmentAgeYears}}} years
+  - Historical Maintenance Data (CSV): {{media url=historicalMaintenanceData}}
 
-  Suggest maintenance actions to improve reliability and reduce costs. 
+  **Analysis Task:**
+  1.  **Predict Costs for Next Year:** Estimate the likely total maintenance cost (excluding fluid replacements) and the specific cost for fluid replacements in Euros (€).
+  2.  **Assess Reliability:** Based on the frequency and nature of past issues, and the equipment's age, calculate a reliability score between 0 (very unreliable) and 100 (very reliable).
+  3.  **Suggest Actions:** Provide concrete, specific maintenance actions tailored to this equipment type and its history. Focus on actions that enhance reliability or prevent costly failures. Examples: "Inspect [Specific Part] every X months," "Consider replacing [Component] proactively due to age/failure pattern," "Calibrate [Sensor] based on usage."
 
-  Historical Maintenance Data: {{media url=historicalMaintenanceData}}
-  Equipment Age (Years): {{{equipmentAgeYears}}}
-  Equipment Type: {{{equipmentType}}}
-
-  Based on this data, predict the following:
-  - Predicted Maintenance Cost (Euros):
-  - Fluid Replacement Cost (Euros):
-  - Reliability Score (0-100):
-  - Suggested Maintenance Actions:
+  **Output Format:**
+  Provide the results strictly according to the defined output schema.
   `,
 });
+
 
 const predictMaintenanceCostsFlow = ai.defineFlow<
   typeof PredictMaintenanceCostsInputSchema,
@@ -112,8 +89,20 @@ const predictMaintenanceCostsFlow = ai.defineFlow<
     inputSchema: PredictMaintenanceCostsInputSchema,
     outputSchema: PredictMaintenanceCostsOutputSchema,
   },
-  async input => {
+  async (input) => {
+    // Potential pre-processing: Could analyze the CSV data here first if needed,
+    // e.g., calculate average time between failures, before sending to the LLM.
+    // For now, directly pass the input to the prompt.
+
     const {output} = await predictMaintenanceCostsPrompt(input);
-    return output!;
+
+    if (!output) {
+        throw new Error("AI model failed to generate a valid prediction.");
+    }
+
+    // Potential post-processing: Validate or sanitize the output if necessary
+    // e.g., ensure costs are non-negative. Zod schema handles basic type checks.
+
+    return output;
   }
 );

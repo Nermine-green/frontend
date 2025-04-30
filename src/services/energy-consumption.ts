@@ -3,58 +3,68 @@
  */
 export interface EquipmentPowerConsumption {
   /**
-   * The equipment type (e.g., thermal chamber, vibrating pot).
+   * The equipment type (e.g., thermal_chamber, vibrating_pot).
    */
   equipment: string;
   /**
-   * The test method (e.g., IEC 60068-2-1).
+   * The specific test method (e.g., '2-1: A', '2-6: Fc(sinusoidal)').
    */
   testMethod: string;
   /**
-   * The power consumption in kW.
+   * The power consumption in kW for this specific method and equipment.
    */
   powerConsumptionkW: number;
 }
 
 // --- Mock Data Store ---
-// In a real application, this would be loaded from a CSV file or database.
+// Updated with new method names and potentially adjusted power values.
+// In a real application, this would be loaded from a CSV file or database based on the method string.
 const mockPowerData: EquipmentPowerConsumption[] = [
-  // Thermal Chamber Data (Example values - replace with actual CSV data)
-  { equipment: 'thermal_chamber', testMethod: 'IEC 60068-2-1', powerConsumptionkW: 5.5 },
-  { equipment: 'thermal_chamber', testMethod: 'IEC 60068-2-2', powerConsumptionkW: 6.0 },
-  { equipment: 'thermal_chamber', testMethod: 'IEC 60068-2-14', powerConsumptionkW: 7.0 }, // Method 2-14 might use a different chamber or mode
-  { equipment: 'thermal_chamber', testMethod: 'IEC 60068-2-30', powerConsumptionkW: 6.5 },
-  { equipment: 'thermal_chamber', testMethod: 'IEC 60068-2-38', powerConsumptionkW: 7.5 },
-  { equipment: 'thermal_chamber', testMethod: 'IEC 60068-2-78', powerConsumptionkW: 6.8 },
+  // === Thermal Chamber ===
+  { equipment: 'thermal_chamber', testMethod: '2-1: A', powerConsumptionkW: 5.5 }, // Cold
+  { equipment: 'thermal_chamber', testMethod: '2-2: B', powerConsumptionkW: 6.0 }, // Dry Heat
+  { equipment: 'thermal_chamber', testMethod: '2-14: Nb', powerConsumptionkW: 7.0 }, // Change of Temp (Ramp)
+  { equipment: 'thermal_chamber', testMethod: '2-30: Db', powerConsumptionkW: 6.5 }, // Damp Heat Cyclic
+  { equipment: 'thermal_chamber', testMethod: '2-38: Z/AD', powerConsumptionkW: 7.5 }, // Temp/Humidity Cyclic
+  { equipment: 'thermal_chamber', testMethod: '2-78: Cab', powerConsumptionkW: 6.8 }, // Damp Heat Steady
 
-  // Thermal Shock Chamber Data
-  { equipment: 'thermal_shock_chamber', testMethod: 'IEC 60068-2-14', powerConsumptionkW: 12.0 }, // Often higher power
+  // === Thermal Shock Chamber ===
+  { equipment: 'thermal_shock_chamber', testMethod: '2-14: Na', powerConsumptionkW: 12.0 }, // Thermal Shock
 
-  // Vibrating Pot Data
-  { equipment: 'vibrating_pot', testMethod: 'IEC 60068-2-6', powerConsumptionkW: 8.0 },
-  { equipment: 'vibrating_pot', testMethod: 'IEC 60068-2-27', powerConsumptionkW: 9.5 }, // Shock tests might spike power
-  { equipment: 'vibrating_pot', testMethod: 'IEC 60068-2-64', powerConsumptionkW: 8.5 },
+  // === Vibrating Pot ===
+  { equipment: 'vibrating_pot', testMethod: '2-6: Fc(sinusoidal)', powerConsumptionkW: 8.0 }, // Sine
+  { equipment: 'vibrating_pot', testMethod: '2-27: Ea(Shock)', powerConsumptionkW: 9.5 },      // Shock
+  { equipment: 'vibrating_pot', testMethod: '2-64: Fh(random)', powerConsumptionkW: 8.5 },     // Random
 
-  // Combined Equipment Data
-   { equipment: 'combined_vibration_thermal', testMethod: 'IEC 60068-2-6', powerConsumptionkW: 13.5 }, // Sum or slightly more than individual
-   { equipment: 'combined_vibration_thermal', testMethod: 'IEC 60068-2-27', powerConsumptionkW: 15.0 },
-   { equipment: 'combined_vibration_thermal', testMethod: 'IEC 60068-2-64', powerConsumptionkW: 14.0 },
-   // Assume combined can also run thermal-only tests
-   { equipment: 'combined_vibration_thermal', testMethod: 'IEC 60068-2-1', powerConsumptionkW: 5.8 }, // Potentially slightly higher idle load
-   { equipment: 'combined_vibration_thermal', testMethod: 'IEC 60068-2-2', powerConsumptionkW: 6.3 },
-   { equipment: 'combined_vibration_thermal', testMethod: 'IEC 60068-2-14', powerConsumptionkW: 7.5 },
-   { equipment: 'combined_vibration_thermal', testMethod: 'IEC 60068-2-30', powerConsumptionkW: 6.8 },
-   { equipment: 'combined_vibration_thermal', testMethod: 'IEC 60068-2-38', powerConsumptionkW: 7.8 },
-   { equipment: 'combined_vibration_thermal', testMethod: 'IEC 60068-2-78', powerConsumptionkW: 7.1 },
+  // === Combined Vibrating Pot + Thermal Chamber ===
+  // Assume this equipment can run *either* vibration *or* thermal tests individually,
+  // or *both simultaneously* (which is handled by summing in the main component).
+  // Power values here represent running *only* that specific test on the combined machine.
+  // Thermal Tests on Combined Machine:
+  { equipment: 'combined_vibration_thermal', testMethod: '2-1: A', powerConsumptionkW: 5.8 },
+  { equipment: 'combined_vibration_thermal', testMethod: '2-2: B', powerConsumptionkW: 6.3 },
+  { equipment: 'combined_vibration_thermal', testMethod: '2-14: Nb', powerConsumptionkW: 7.5 },
+  { equipment: 'combined_vibration_thermal', testMethod: '2-30: Db', powerConsumptionkW: 6.8 },
+  { equipment: 'combined_vibration_thermal', testMethod: '2-38: Z/AD', powerConsumptionkW: 7.8 },
+  { equipment: 'combined_vibration_thermal', testMethod: '2-78: Cab', powerConsumptionkW: 7.1 },
+  // Vibration Tests on Combined Machine:
+  { equipment: 'combined_vibration_thermal', testMethod: '2-6: Fc(sinusoidal)', powerConsumptionkW: 8.2 },
+  { equipment: 'combined_vibration_thermal', testMethod: '2-27: Ea(Shock)', powerConsumptionkW: 9.8 },
+  { equipment: 'combined_vibration_thermal', testMethod: '2-64: Fh(random)', powerConsumptionkW: 8.8 },
+  // NOTE: Thermal shock ('2-14: Na') typically requires a dedicated chamber. Assume it cannot run on the combined one.
+
+  // === Custom / None ===
+  // For 'none' standard, power is input manually, so no mock data needed here.
 
 ];
 // --- End Mock Data ---
 
 /**
  * Asynchronously retrieves equipment power consumption for a given test method and equipment.
- * In a real application, this would parse a CSV or query a database.
+ * This function finds the power consumption for a *single* test method run on the specified equipment.
+ * For combined tests, call this function for each part and sum the results in the calling component.
  *
- * @param testMethod The test method.
+ * @param testMethod The specific test method string (e.g., '2-1: A').
  * @param equipment The equipment type identifier (e.g., 'thermal_chamber').
  * @returns A promise that resolves to the equipment power consumption data.
  * @throws Error if no matching data is found.
@@ -63,8 +73,8 @@ export async function getEquipmentPowerConsumption(
   testMethod: string,
   equipment: string
 ): Promise<EquipmentPowerConsumption> {
-  // Simulate async operation (like reading a file)
-  await new Promise(resolve => setTimeout(resolve, 50)); // Small delay
+  // Simulate async operation (like reading a file or DB query)
+  await new Promise(resolve => setTimeout(resolve, 30)); // Small delay
 
   // Find matching data in the mock store
   const foundData = mockPowerData.find(
@@ -75,21 +85,22 @@ export async function getEquipmentPowerConsumption(
     return foundData;
   } else {
     // Fallback or Error Handling:
-    // Option 1: Return a default value
-    // return { equipment, testMethod, powerConsumptionkW: 5.0 }; // Example default
+    console.error(`No power consumption data found for Equipment: ${equipment}, Method: ${testMethod}`);
 
-    // Option 2: Throw an error
-     console.error(`No power consumption data found for Equipment: ${equipment}, Method: ${testMethod}`);
-     throw new Error(`Power consumption data not available for the selected configuration (${equipment} / ${testMethod}). Please check the data source or configuration.`);
+    // Check common misconfigurations
+    if (testMethod === '2-14: Na' && equipment === 'combined_vibration_thermal') {
+         throw new Error(`Thermal Shock (2-14: Na) typically requires a dedicated 'Thermal Shock Chamber', not the combined equipment.`);
+    }
+    if (equipment === 'thermal_shock_chamber' && !testMethod.includes('2-14: Na')) {
+         throw new Error(`The 'Thermal Shock Chamber' is primarily for method 2-14: Na.`);
+    }
+
+    // Generic error
+    throw new Error(`Power consumption data not available for the selected configuration (${equipment} / ${testMethod}). Please check the data source or select compatible options.`);
   }
 }
 
 // TODO: Implement actual CSV parsing logic if required.
-// Example (conceptual - would need a CSV parsing library like 'papaparse'):
-// async function loadDataFromCSV() {
-//   const response = await fetch('/path/to/your/power_consumption.csv');
-//   const csvText = await response.text();
-//   // Use a library like papaparse to parse csvText into an array of objects
-//   // Store the parsed data in a variable similar to mockPowerData
-// }
-// Call loadDataFromCSV() when the application starts or when needed.
+// The parsing logic should handle the new method strings (e.g., '2-1: A')
+// and potentially map them to power values based on the equipment column.
+```
