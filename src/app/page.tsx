@@ -364,6 +364,8 @@ export default function Home() {
   const method = form.watch('method' as any); // Watch the specific method based on type
   const method1 = form.watch('method1'); // Watch combined method 1
   const method2 = form.watch('method2'); // Watch combined method 2
+  const equipmentAgeYears = form.watch('equipmentAgeYears'); // Watch age for results display
+  const historicalCsvContent = form.watch('historicalCsvContent'); // Watch csv content for results display
 
   // Determine equipment suitability based on test type and method
   const suitableEquipmentOptions = React.useMemo(() => {
@@ -427,7 +429,6 @@ export default function Home() {
       form.setValue('historicalCsvContent', undefined, { shouldValidate: true }); // Clear if file removed
     }
   };
-
 
   // Calculate total duration in hours based on form values
    const getDurationInHours = (values: FormValues): number => {
@@ -639,12 +640,9 @@ export default function Home() {
     // Only update if it's a valid number or undefined (for clearing)
     if (value === '' || !isNaN(numericValue as number)) {
       field.onChange(numericValue);
-    } else if (field.value !== undefined) {
-      // If input is invalid (e.g., text) but field had a value, keep the old value
-      // to prevent NaN state. Optionally reset or show error.
-      // For now, just don't change it. User must fix the input.
-      e.target.value = field.value?.toString() ?? ''; // Revert input visually
     }
+    // No 'else' needed: if input is invalid (e.g., "abc"), keep the current value.
+    // The user must manually correct the input. Zod validation will catch it on submit.
   };
 
 
@@ -897,7 +895,7 @@ export default function Home() {
                 name={lowTempName}
                 control={form.control}
                 defaultValue={-10}
-                render={({ field }) => <input type="hidden" {...field} />}
+                render={({ field }) => <input type="hidden" {...field} value={field.value ?? -10} />} // Ensure value is not undefined
             />
             <FormField control={form.control} name={cyclesName} key={`${cyclesName}-${partNumber}`}
               render={({ field }) => (
@@ -1228,11 +1226,12 @@ export default function Home() {
                                                   vibrationAxis2: undefined, // Reset axis if method changes
                                                   durationHours2: undefined, // Reset duration
                                                   // Add resets for temp/rate/variant if method2 can be thermal
-                                                  lowTemp2: undefined, // Hypothetical example
-                                                  highTemp2: undefined,
-                                                  rateOfChange2: undefined,
-                                                  variant2: undefined,
-                                                  durationCycles2: undefined, // Hypothetical example
+                                                  // Assuming method2 won't need these, adjust if necessary
+                                                  // lowTemp2: undefined,
+                                                  // highTemp2: undefined,
+                                                  // rateOfChange2: undefined,
+                                                  // variant2: undefined,
+                                                  // durationCycles2: undefined,
                                               }, { keepErrors: false, keepDirty: true, keepValues: true });
                                         }} value={field.value ?? ''}>
                                             <FormControl><SelectTrigger><SelectValue placeholder="Select second method (e.g., Vibration)" /></SelectTrigger></FormControl>
@@ -1465,7 +1464,7 @@ export default function Home() {
           </Card>
 
            {/* Predictive Maintenance Results */}
-           {(isLoading || maintenancePrediction || (form.formState.isSubmitted && (values.historicalCsvContent || values.equipmentAgeYears))) && ( // Show card if loading, has results, or form submitted with partial/full maintenance inputs
+           {(isLoading || maintenancePrediction || (form.formState.isSubmitted && (historicalCsvContent || equipmentAgeYears))) && ( // Show card if loading, has results, or form submitted with partial/full maintenance inputs
             <Card className="shadow-lg">
                 <CardHeader>
                 <CardTitle className="flex items-center gap-2">
@@ -1474,7 +1473,7 @@ export default function Home() {
                 <CardDescription>Insights based on historical data (if provided).</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                 {isLoading && !maintenancePrediction && (values.equipmentAgeYears && values.historicalCsvContent) && ( // Show skeleton only when loading AND both maintenance inputs are provided
+                 {isLoading && !maintenancePrediction && (equipmentAgeYears && historicalCsvContent) && ( // Show skeleton only when loading AND both maintenance inputs are provided
                      <div className="space-y-4">
                         <Skeleton className="h-6 w-1/2" />
                         <Skeleton className="h-6 w-1/2" />
@@ -1482,12 +1481,12 @@ export default function Home() {
                         <Skeleton className="h-10 w-full" />
                     </div>
                  )}
-                {!isLoading && !maintenancePrediction && form.formState.isSubmitted && (values.historicalCsvContent || values.equipmentAgeYears) && !(values.historicalCsvContent && values.equipmentAgeYears) && ( // Show specific message if submitted but missing data (via Zod)
+                {!isLoading && !maintenancePrediction && form.formState.isSubmitted && (historicalCsvContent || equipmentAgeYears) && !(historicalCsvContent && equipmentAgeYears) && ( // Show specific message if submitted but missing data (via Zod)
                     <p className="text-destructive text-center py-4">
                        Provide both equipment age and historical data (CSV) for maintenance prediction.
                     </p>
                  )}
-                 {!isLoading && !maintenancePrediction && !values.historicalCsvContent && !values.equipmentAgeYears && ( // Show prompt if no maintenance input provided and not loading/submitted
+                 {!isLoading && !maintenancePrediction && !historicalCsvContent && !equipmentAgeYears && ( // Show prompt if no maintenance input provided and not loading/submitted
                     <p className="text-muted-foreground text-center py-4">
                       Optionally provide equipment age and historical data (CSV) for predictive analysis.
                     </p>
