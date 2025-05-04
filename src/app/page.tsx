@@ -18,7 +18,7 @@ import {
 } from '@/services/energy-consumption';
 // import { getEmissionFactor, type EmissionFactor } from '@/services/emission-factors'; // Keep static for now
 // import { getElectricityCost, type ElectricityCost } from '@/services/electricity-cost'; // Keep static for now
-import { predictMaintenanceCosts, type PredictMaintenanceCostsOutput } from '@/ai/flows/predict-maintenance-costs';
+import { predictMaintenanceCosts, type PredictMaintenanceCostsInput, type PredictMaintenanceCostsOutput } from '@/ai/flows/predict-maintenance-costs'; // Added PredictMaintenanceCostsInput
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -52,7 +52,6 @@ import { Thermometer, Zap, TrendingUp, Leaf, Euro, Wrench, Droplets, Activity, L
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import Link from 'next/link';
-// Removed Textarea import as it's not used directly now
 
 // --- Constants ---
 const LOCATION = 'Tunisia';
@@ -152,7 +151,7 @@ const baseSchema = z.object({
   equipment: z.string({ required_error: "Please select equipment." }).min(1, "Please select equipment."), // Now always required initially
   initialTemp: z.literal(INITIAL_RECOVERY_TEMP).optional(), // Fixed value
   recoveryTemp: z.literal(INITIAL_RECOVERY_TEMP).optional(), // Fixed value
-  historicalMaintenanceData: z.string().optional().describe("Base64 encoded historical maintenance data"),
+  historicalCsvContent: z.string().optional().describe("Plain text content of the historical maintenance CSV"),
   equipmentAgeYears: z.coerce.number().positive("Age must be positive").optional().describe("Age of the equipment in years"),
   customPowerKw: z.coerce.number().positive("Power must be positive").optional(), // For custom tests
 });
@@ -313,6 +312,13 @@ const formSchema = z.discriminatedUnion('testType', [
          }
     }
 
+    // Predictive Maintenance Refinements
+    if (data.equipmentAgeYears !== undefined && data.historicalCsvContent === undefined) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Historical data CSV is required when equipment age is provided for prediction.", path: ['historicalCsvContent'] }); // Point error to file input technically
+    }
+    if (data.equipmentAgeYears === undefined && data.historicalCsvContent !== undefined) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Equipment age is required when historical data is provided for prediction.", path: ['equipmentAgeYears'] });
+    }
 
 });
 
@@ -348,6 +354,7 @@ export default function Home() {
       durationHours2: undefined,
       equipmentAgeYears: undefined,
       customPowerKw: undefined,
+      historicalCsvContent: undefined, // Initialize CSV content
     },
      mode: 'onChange', // Validate on change for better UX
   });
@@ -395,23 +402,32 @@ export default function Home() {
 
   // --- Helper Functions ---
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    if (event.target.files && event.target.files[0]) {
-      setSelectedFile(event.target.files[0]);
-      // Convert to base64 and set in form state immediately if needed, or do it on submit
+    const file = event.target.files?.[0];
+    if (file) {
+      setSelectedFile(file);
+      // Read file content as text and store in form state
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const text = e.target?.result as string;
+        form.setValue('historicalCsvContent', text, { shouldValidate: true }); // Set content and validate
+      };
+      reader.onerror = (e) => {
+          console.error("Failed to read file:", e);
+          toast({
+             title: "File Read Error",
+             description: "Could not read the selected CSV file.",
+             variant: "destructive",
+          });
+          setSelectedFile(null);
+          form.setValue('historicalCsvContent', undefined, { shouldValidate: true }); // Clear on error
+      }
+      reader.readAsText(file);
     } else {
       setSelectedFile(null);
-      form.setValue('historicalMaintenanceData', undefined); // Clear if file removed
+      form.setValue('historicalCsvContent', undefined, { shouldValidate: true }); // Clear if file removed
     }
   };
 
-  const convertFileToBase64 = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.readAsDataURL(file);
-      reader.onload = () => resolve(reader.result as string);
-      reader.onerror = (error) => reject(error);
-    });
-  };
 
   // Calculate total duration in hours based on form values
    const getDurationInHours = (values: FormValues): number => {
@@ -465,9 +481,22 @@ export default function Home() {
     setMaintenancePrediction(null);
     console.log("Form Values Submitted:", values); // Debug log
 
+    // Explicitly check validation status before proceeding
+    const isValid = await form.trigger(); // Trigger validation for all fields
+     if (!isValid) {
+        toast({
+            title: "Validation Error",
+            description: "Please check the form for errors before submitting.",
+            variant: "destructive",
+        });
+        setIsLoading(false);
+        return; // Stop submission if validation fails
+     }
+
     try {
       const durationHours = getDurationInHours(values);
       if (durationHours <= 0) {
+          // This validation might be redundant if the zod schema covers it, but good as a safeguard
           form.setError("root", { type: "manual", message: "Invalid test duration calculated. Check hour/cycle inputs." });
           throw new Error("Invalid test duration calculated.");
       }
@@ -508,9 +537,9 @@ export default function Home() {
          case 'vibrating_pot': equipmentHourlyCost = 100; break;
          case 'combined_vibration_thermal': equipmentHourlyCost = 105; break;
          default:
-             // Handle case where equipment might be missing if form is invalid
+             // This case should ideally not be reached if validation is correct
              console.warn("Equipment type missing or invalid, using default hourly cost.");
-             equipmentHourlyCost = 10;
+             equipmentHourlyCost = 10; // Arbitrary default
        }
 
 
@@ -536,27 +565,32 @@ export default function Home() {
 
       // --- Predictive Maintenance ---
       let maintenancePredictionResult: PredictMaintenanceCostsOutput | null = null;
-      if (selectedFile && values.equipmentAgeYears) {
+      // Use historicalCsvContent from form values now
+      if (values.historicalCsvContent && values.equipmentAgeYears) {
         try {
-          const base64Data = await convertFileToBase64(selectedFile);
-          const equipmentLabel = equipmentOptions.find(e => e.value === values.equipment)?.label || values.equipment;
+           const equipmentLabel = equipmentOptions.find(e => e.value === values.equipment)?.label || values.equipment;
 
-          maintenancePredictionResult = await predictMaintenanceCosts({
-            historicalMaintenanceData: base64Data,
-            equipmentAgeYears: values.equipmentAgeYears,
-            equipmentType: equipmentLabel,
-          });
+           const predictionInput: PredictMaintenanceCostsInput = {
+              historicalCsvContent: values.historicalCsvContent,
+              equipmentAgeYears: values.equipmentAgeYears,
+              equipmentType: equipmentLabel,
+           };
+           console.log("Calling AI prediction with:", predictionInput); // Log AI input
+          maintenancePredictionResult = await predictMaintenanceCosts(predictionInput);
           setMaintenancePrediction(maintenancePredictionResult);
         } catch (aiError: any) {
           console.error("AI Prediction Error:", aiError);
+          // Check for specific error details if available
+          const errorDetails = aiError?.cause?.message || aiError.message || 'Unknown AI error';
           toast({
             title: "AI Prediction Error",
-            description: `Could not predict maintenance costs: ${aiError.message || 'Unknown AI error'}`,
+            description: `Could not predict maintenance costs: ${errorDetails}`,
             variant: "destructive",
           });
         }
-      } else if (form.formState.isSubmitted && (values.equipmentAgeYears || selectedFile) && !(values.equipmentAgeYears && selectedFile)) {
-         // Show warning only if submitted and one (but not both) of the fields is filled
+      } else if (form.formState.isSubmitted && (values.equipmentAgeYears || values.historicalCsvContent) && !(values.equipmentAgeYears && values.historicalCsvContent)) {
+         // Show warning only if submitted and one (but not both) of the fields is filled (based on Zod refinement now)
+         // This toast might be redundant due to Zod validation, but can stay as a fallback.
          toast({
             title: "Missing Info for Maintenance Prediction",
             description: "Provide both equipment age and historical data (CSV) for prediction.",
@@ -570,14 +604,25 @@ export default function Home() {
       });
     } catch (error: any) {
       console.error('Calculation failed:', error);
-      // Don't show toast if it's a validation error already handled by form.setError
-      if (!form.formState.errors.root && !form.formState.errors.customPowerKw) {
-         toast({
-            title: 'Calculation Failed',
-            description: error.message || 'An error occurred. Please check inputs.',
-            variant: 'destructive',
+       // Use Zod validation errors first if they exist
+       const formErrors = Object.values(form.formState.errors);
+       if (formErrors.length > 0) {
+           // Error handled by form validation messages
+       } else if (error.message) {
+          // Show other errors (e.g., API fetch, calculation logic) via toast
+          toast({
+              title: 'Calculation Failed',
+              description: error.message,
+              variant: 'destructive',
           });
-      }
+       } else {
+           // Generic fallback
+           toast({
+              title: 'An Unexpected Error Occurred',
+              description: 'Please try again or contact support.',
+              variant: 'destructive',
+           });
+       }
     } finally {
       setIsLoading(false);
     }
@@ -589,8 +634,17 @@ export default function Home() {
     e: React.ChangeEvent<HTMLInputElement>
   ) => {
     const value = e.target.value;
-    // Allow empty string or convert to number
-    field.onChange(value === '' ? undefined : Number(value));
+    // Allow empty string (which becomes undefined), or parse as number
+    const numericValue = value === '' ? undefined : parseFloat(value);
+    // Only update if it's a valid number or undefined (for clearing)
+    if (value === '' || !isNaN(numericValue as number)) {
+      field.onChange(numericValue);
+    } else if (field.value !== undefined) {
+      // If input is invalid (e.g., text) but field had a value, keep the old value
+      // to prevent NaN state. Optionally reset or show error.
+      // For now, just don't change it. User must fix the input.
+      e.target.value = field.value?.toString() ?? ''; // Revert input visually
+    }
   };
 
 
@@ -605,7 +659,9 @@ export default function Home() {
         // Helper to generate field names dynamically for combined parts
         const name = (fieldName: string): FieldPath<FormValues> => {
              if (!isCombinedPart) return fieldName as FieldPath<FormValues>;
-             return `${fieldName}${partNumber}` as FieldPath<FormValues>;
+             // Construct field names like 'lowTemp1', 'durationHours2' etc.
+             const baseName = fieldName as keyof Omit<FormValues, 'testType' | 'standard' | 'equipment' | 'initialTemp' | 'recoveryTemp' | 'historicalCsvContent' | 'equipmentAgeYears' | 'customPowerKw' | 'method'>; // Type assertion might be needed
+             return `${baseName}${partNumber}` as FieldPath<FormValues>;
         };
 
         const lowTempName = name("lowTemp");
@@ -614,22 +670,23 @@ export default function Home() {
         const variantName = name("variant");
         const hoursName = name("durationHours");
         const cyclesName = name("durationCycles");
-        const axisName = name("vibrationAxis"); // Needs name("vibrationAxis") for combined part 2
+        const axisName = name("vibrationAxis"); // Needs adjustment for combined part 2 below
 
-        // Common temperature props (fixed)
+
+        // Common temperature props (fixed) - Rendered conditionally within each case for layout flexibility
         const initialTempField = (
-            <FormItem>
+            <FormItem key={`initialTemp-${partNumber}`}>
               <FormLabel>Initial Temperature</FormLabel>
               <FormControl>
-                 <Input type="text" value={`${INITIAL_RECOVERY_TEMP}°C`} readOnly className="bg-muted" />
+                 <Input type="text" value={`${INITIAL_RECOVERY_TEMP}°C`} readOnly className="bg-muted cursor-default" />
               </FormControl>
             </FormItem>
         );
          const recoveryTempField = (
-            <FormItem>
+            <FormItem key={`recoveryTemp-${partNumber}`}>
               <FormLabel>Recovery Temperature</FormLabel>
               <FormControl>
-                 <Input type="text" value={`${INITIAL_RECOVERY_TEMP}°C`} readOnly className="bg-muted" />
+                 <Input type="text" value={`${INITIAL_RECOVERY_TEMP}°C`} readOnly className="bg-muted cursor-default" />
               </FormControl>
             </FormItem>
         );
@@ -642,7 +699,7 @@ export default function Home() {
           <>
              {initialTempField}
              {recoveryTempField}
-            <FormField control={form.control} name={lowTempName}
+            <FormField control={form.control} name={lowTempName} key={`${lowTempName}-${partNumber}`}
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Low Temperature *</FormLabel>
@@ -652,7 +709,7 @@ export default function Home() {
                   </Select>
                   <FormMessage />
                 </FormItem> )} />
-            <FormField control={form.control} name={hoursName}
+            <FormField control={form.control} name={hoursName} key={`${hoursName}-${partNumber}`}
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Duration (Hours) *</FormLabel>
@@ -666,7 +723,7 @@ export default function Home() {
           <>
              {initialTempField}
              {recoveryTempField}
-             <FormField control={form.control} name={highTempName}
+             <FormField control={form.control} name={highTempName} key={`${highTempName}-${partNumber}`}
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>High Temperature *</FormLabel>
@@ -676,7 +733,7 @@ export default function Home() {
                   </Select>
                   <FormMessage />
                 </FormItem> )} />
-            <FormField control={form.control} name={hoursName}
+            <FormField control={form.control} name={hoursName} key={`${hoursName}-${partNumber}`}
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Duration (Hours) *</FormLabel>
@@ -690,7 +747,7 @@ export default function Home() {
           <>
              {initialTempField}
              {recoveryTempField}
-             <FormField control={form.control} name={lowTempName}
+             <FormField control={form.control} name={lowTempName} key={`${lowTempName}-${partNumber}`}
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Low Temperature *</FormLabel>
@@ -700,7 +757,7 @@ export default function Home() {
                   </Select>
                   <FormMessage />
                 </FormItem> )} />
-             <FormField control={form.control} name={highTempName}
+             <FormField control={form.control} name={highTempName} key={`${highTempName}-${partNumber}`}
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>High Temperature *</FormLabel>
@@ -710,7 +767,7 @@ export default function Home() {
                   </Select>
                   <FormMessage />
                 </FormItem> )} />
-             <FormField control={form.control} name={rateName}
+             <FormField control={form.control} name={rateName} key={`${rateName}-${partNumber}`}
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Rate of Change (°C/min) *</FormLabel>
@@ -720,7 +777,7 @@ export default function Home() {
                   </Select>
                   <FormMessage />
                 </FormItem> )} />
-            <FormField control={form.control} name={hoursName}
+            <FormField control={form.control} name={hoursName} key={`${hoursName}-${partNumber}`}
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Duration (Hours) *</FormLabel>
@@ -730,11 +787,14 @@ export default function Home() {
           </>
         );
         case '2-14: Na': // Thermal Shock
+        // Note: This case should only appear if testType is 'thermal_shock' or potentially as part of 'combined'
+        // The main form structure handles rendering this under 'thermal_shock',
+        // If used in 'combined', ensure `isCombinedPart` is true.
         return (
           <>
              {initialTempField}
              {recoveryTempField}
-             <FormField control={form.control} name={lowTempName}
+             <FormField control={form.control} name={lowTempName} key={`${lowTempName}-${partNumber}`} // Ensure key uniqueness
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Low Temperature *</FormLabel>
@@ -744,7 +804,7 @@ export default function Home() {
                    </Select>
                   <FormMessage />
                 </FormItem> )} />
-             <FormField control={form.control} name={highTempName}
+             <FormField control={form.control} name={highTempName} key={`${highTempName}-${partNumber}`}
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>High Temperature *</FormLabel>
@@ -754,7 +814,7 @@ export default function Home() {
                    </Select>
                   <FormMessage />
                 </FormItem> )} />
-            <FormField control={form.control} name={hoursName}
+            <FormField control={form.control} name={hoursName} key={`${hoursName}-${partNumber}`}
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Duration (Hours) *</FormLabel>
@@ -768,7 +828,7 @@ export default function Home() {
           <>
              {initialTempField}
              {recoveryTempField}
-            <FormField control={form.control} name={highTempName}
+            <FormField control={form.control} name={highTempName} key={`${highTempName}-${partNumber}`}
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>High Temperature *</FormLabel>
@@ -781,17 +841,17 @@ export default function Home() {
                   </Select>
                   <FormMessage />
                 </FormItem> )} />
-             <FormField control={form.control} name={variantName}
+             <FormField control={form.control} name={variantName} key={`${variantName}-${partNumber}`}
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Variant *</FormLabel>
-                  <Select onValueChange={field.onChange} value={field.value}>
+                  <Select onValueChange={field.onChange} value={field.value ?? ''}>
                     <FormControl><SelectTrigger><SelectValue placeholder="Select Variant" /></SelectTrigger></FormControl>
                     <SelectContent>{variantOptions.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}</SelectContent>
                   </Select>
                   <FormMessage />
                 </FormItem> )} />
-            <FormField control={form.control} name={cyclesName}
+            <FormField control={form.control} name={cyclesName} key={`${cyclesName}-${partNumber}`}
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Duration (Cycles) *</FormLabel>
@@ -802,16 +862,16 @@ export default function Home() {
           </>
         );
       case '2-38: Z/AD':
-        // Pre-set fixed low temperature if needed, or just display it
+        // Pre-set fixed low temperature dynamically
         useEffect(() => {
-             if (!isCombinedPart || partNumber === 1) form.setValue(lowTempName, -10);
-             else form.setValue(lowTempName, -10); // Ensure it's set for combined part 2 if applicable
-        }, [form, isCombinedPart, partNumber, lowTempName]);
+             const targetLowTempName = isCombinedPart ? `lowTemp${partNumber}` : 'lowTemp';
+             form.setValue(targetLowTempName as FieldPath<FormValues>, -10);
+        }, [form, isCombinedPart, partNumber, lowTempName]); // Rerun if context changes
         return (
           <>
              {initialTempField}
              {recoveryTempField}
-             <FormField control={form.control} name={highTempName}
+             <FormField control={form.control} name={highTempName} key={`${highTempName}-${partNumber}`}
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>High Temperature *</FormLabel>
@@ -825,14 +885,21 @@ export default function Home() {
                   </Select>
                   <FormMessage />
                 </FormItem> )} />
-            <FormItem>
+            <FormItem key={`lowTempDisplay-${partNumber}`}>
                 <FormLabel>Low Temperature</FormLabel>
                 <FormControl>
-                    <Input type="text" value="-10°C" readOnly className="bg-muted" />
+                    <Input type="text" value="-10°C" readOnly className="bg-muted cursor-default" />
                 </FormControl>
                 <FormDescription>(Fixed for this method)</FormDescription>
             </FormItem>
-            <FormField control={form.control} name={cyclesName}
+            {/* Hidden input to store the fixed value for validation/submission */}
+            <Controller
+                name={lowTempName}
+                control={form.control}
+                defaultValue={-10}
+                render={({ field }) => <input type="hidden" {...field} />}
+            />
+            <FormField control={form.control} name={cyclesName} key={`${cyclesName}-${partNumber}`}
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Duration (Cycles) *</FormLabel>
@@ -847,7 +914,7 @@ export default function Home() {
           <>
              {initialTempField}
              {recoveryTempField}
-             <FormField control={form.control} name={highTempName}
+             <FormField control={form.control} name={highTempName} key={`${highTempName}-${partNumber}`}
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>High Temperature *</FormLabel>
@@ -861,7 +928,7 @@ export default function Home() {
                   </Select>
                   <FormMessage />
                 </FormItem> )} />
-            <FormField control={form.control} name={hoursName}
+            <FormField control={form.control} name={hoursName} key={`${hoursName}-${partNumber}`}
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Duration (Hours) *</FormLabel>
@@ -875,20 +942,21 @@ export default function Home() {
        case '2-6: Fc(sinusoidal)':
        case '2-27: Ea(Shock)':
        case '2-64: Fh(random)':
+        // Determine the correct field name for vibration axis based on context
         const currentAxisName = isCombinedPart && partNumber === 2 ? 'vibrationAxis2' : 'vibrationAxis';
         return (
             <>
-                 <FormField control={form.control} name={currentAxisName as FieldPath<FormValues>}
+                 <FormField control={form.control} name={currentAxisName as FieldPath<FormValues>} key={`${currentAxisName}-${partNumber}`}
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Vibration Axis *</FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value}>
+                      <Select onValueChange={field.onChange} value={field.value ?? ''}>
                         <FormControl><SelectTrigger><SelectValue placeholder="Select Axis" /></SelectTrigger></FormControl>
                         <SelectContent>{vibrationAxisOptions.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}</SelectContent>
                       </Select>
                       <FormMessage />
                     </FormItem> )} />
-                <FormField control={form.control} name={hoursName} // Duration field name based on combined part or not
+                <FormField control={form.control} name={hoursName} key={`${hoursName}-${partNumber}`} // Duration field name based on combined part or not
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Duration (Hours) *</FormLabel>
@@ -940,9 +1008,15 @@ export default function Home() {
                         <Select onValueChange={(value: TestType) => {
                             field.onChange(value);
                             // Reset fields dependent on test type
-                            form.reset({ // Reset more comprehensively
-                                testType: value, // Keep the new test type
-                                standard: 'IEC 60068', // Reset standard to default
+                             form.reset({
+                                // Keep fields that should persist across type changes
+                                historicalCsvContent: form.getValues('historicalCsvContent'),
+                                equipmentAgeYears: form.getValues('equipmentAgeYears'),
+                                // Explicitly reset fields that ARE dependent on testType
+                                testType: value, // Keep the newly selected type
+                                standard: 'IEC 60068', // Default standard
+                                initialTemp: INITIAL_RECOVERY_TEMP, // Keep fixed temps
+                                recoveryTemp: INITIAL_RECOVERY_TEMP,
                                 equipment: undefined, // Reset equipment
                                 method: undefined,
                                 method1: undefined,
@@ -963,12 +1037,13 @@ export default function Home() {
                                 vibrationAxis2: undefined,
                                 durationHours2: undefined,
                                 customPowerKw: undefined,
-                                // Keep maintenance fields if desired, or reset them too
-                                // historicalMaintenanceData: form.getValues('historicalMaintenanceData'),
-                                // equipmentAgeYears: form.getValues('equipmentAgeYears'),
+                            }, {
+                                keepErrors: false, // Clear previous validation errors
+                                keepDirty: true, // Keep track if the form was dirty
+                                keepValues: false, // Don't keep old values unless specified above
                             });
                             setSelectedFile(null); // Clear selected file display if resetting
-                        }} value={field.value}>
+                        }} value={field.value ?? ''}>
                           <FormControl>
                             <SelectTrigger>
                               <SelectValue placeholder="Select test type" />
@@ -1000,26 +1075,37 @@ export default function Home() {
                                 <Select onValueChange={(value) => {
                                      field.onChange(value);
                                      // Reset method and related fields when standard changes
-                                     form.resetField('method');
-                                     form.resetField('method1');
-                                     form.resetField('method2');
-                                      form.resetField('lowTemp');
-                                      form.resetField('highTemp');
-                                      form.resetField('rateOfChange');
-                                      form.resetField('variant');
-                                      form.resetField('durationHours');
-                                      form.resetField('durationCycles');
-                                      form.resetField('vibrationAxis');
-                                      form.resetField('lowTemp1');
-                                      form.resetField('highTemp1');
-                                      form.resetField('rateOfChange1');
-                                      form.resetField('variant1');
-                                      form.resetField('durationHours1');
-                                      form.resetField('durationCycles1');
-                                      form.resetField('vibrationAxis2');
-                                      form.resetField('durationHours2');
-                                      form.resetField('customPowerKw');
-                                 }} value={field.value}>
+                                     // Keep testType, equipmentAge, file content
+                                     form.reset({
+                                         testType: form.getValues('testType'),
+                                         standard: value,
+                                         initialTemp: INITIAL_RECOVERY_TEMP,
+                                         recoveryTemp: INITIAL_RECOVERY_TEMP,
+                                         equipmentAgeYears: form.getValues('equipmentAgeYears'),
+                                         historicalCsvContent: form.getValues('historicalCsvContent'),
+                                         // Reset everything else related to method/params
+                                         equipment: undefined,
+                                         method: undefined,
+                                         method1: undefined,
+                                         method2: undefined,
+                                         lowTemp: undefined,
+                                         highTemp: undefined,
+                                         rateOfChange: undefined,
+                                         variant: undefined,
+                                         durationHours: undefined,
+                                         durationCycles: undefined,
+                                         vibrationAxis: undefined,
+                                         lowTemp1: undefined,
+                                         highTemp1: undefined,
+                                         rateOfChange1: undefined,
+                                         variant1: undefined,
+                                         durationHours1: undefined,
+                                         durationCycles1: undefined,
+                                         vibrationAxis2: undefined,
+                                         durationHours2: undefined,
+                                         customPowerKw: undefined,
+                                     }, { keepErrors: false, keepDirty: true, keepValues: false });
+                                 }} value={field.value ?? ''}>
                                 <FormControl><SelectTrigger><SelectValue placeholder="Select Standard" /></SelectTrigger></FormControl>
                                 <SelectContent>
                                     {standardOptions.map(option => (
@@ -1043,15 +1129,22 @@ export default function Home() {
                                 <FormLabel>Method *</FormLabel>
                                 <Select onValueChange={(value) => {
                                      field.onChange(value);
-                                     // Reset specific fields when method changes
-                                      form.resetField('lowTemp');
-                                      form.resetField('highTemp');
-                                      form.resetField('rateOfChange');
-                                      form.resetField('variant');
-                                      form.resetField('durationHours');
-                                      form.resetField('durationCycles');
-                                      form.resetField('vibrationAxis');
-                                 }} value={field.value} >
+                                     // Reset specific fields when method changes, keep others
+                                      form.reset({
+                                        ...form.getValues(), // Keep existing values
+                                        method: value, // Set the new method
+                                        // Reset only params directly tied to the method choice
+                                        lowTemp: undefined,
+                                        highTemp: undefined,
+                                        rateOfChange: undefined,
+                                        variant: undefined,
+                                        durationHours: undefined,
+                                        durationCycles: undefined,
+                                        vibrationAxis: undefined,
+                                        // Do NOT reset combined fields here
+                                      }, { keepErrors: false, keepDirty: true, keepValues: true }); // Keep other values
+
+                                 }} value={field.value ?? ''} >
                                     <FormControl><SelectTrigger><SelectValue placeholder={`Select ${testType} method`} /></SelectTrigger></FormControl>
                                     <SelectContent>
                                     {testType === 'thermal' && thermalMethods.map(m => <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>)}
@@ -1066,7 +1159,7 @@ export default function Home() {
                     )}
 
                     {/* Render method-specific fields for non-combined types */}
-                     {testType && testType !== 'combined' && standard === 'IEC 60068' && (
+                     {testType && testType !== 'combined' && standard === 'IEC 60068' && method && (
                          <div className="space-y-4 pl-4 border-l-2 border-border ml-1">
                              {renderMethodSpecificFields(method)}
                          </div>
@@ -1089,13 +1182,18 @@ export default function Home() {
                                         <Select onValueChange={(value) => {
                                              field.onChange(value);
                                               // Reset Part 1 specific fields
-                                             form.resetField('lowTemp1');
-                                             form.resetField('highTemp1');
-                                             form.resetField('rateOfChange1');
-                                             form.resetField('variant1');
-                                             form.resetField('durationHours1');
-                                             form.resetField('durationCycles1');
-                                        }} value={field.value} >
+                                              form.reset({
+                                                  ...form.getValues(),
+                                                  method1: value,
+                                                  lowTemp1: undefined,
+                                                  highTemp1: undefined,
+                                                  rateOfChange1: undefined,
+                                                  variant1: undefined,
+                                                  durationHours1: undefined,
+                                                  durationCycles1: undefined,
+                                                  // Don't reset vibrationAxis1 as it doesn't exist
+                                              }, { keepErrors: false, keepDirty: true, keepValues: true });
+                                        }} value={field.value ?? ''} >
                                             <FormControl><SelectTrigger><SelectValue placeholder="Select first method (e.g., Thermal)" /></SelectTrigger></FormControl>
                                             <SelectContent>
                                                 {/* Allow selection from all relevant methods */}
@@ -1106,9 +1204,9 @@ export default function Home() {
                                         </FormItem>
                                     )}
                                 />
-                                 <div className="space-y-4 pl-4 border-l-2 border-border ml-1 mt-4">
+                                 {method1 && <div className="space-y-4 pl-4 border-l-2 border-border ml-1 mt-4">
                                     {renderMethodSpecificFields(method1, true, 1)}
-                                </div>
+                                </div>}
                             </Card>
 
                             {/* Method 2 Group */}
@@ -1124,10 +1222,19 @@ export default function Home() {
                                         <Select onValueChange={(value) => {
                                              field.onChange(value);
                                              // Reset Part 2 specific fields
-                                             form.resetField('vibrationAxis2');
-                                             form.resetField('durationHours2');
-                                             // Add resets for temp/rate/variant if method2 can be thermal
-                                        }} value={field.value}>
+                                              form.reset({
+                                                  ...form.getValues(),
+                                                  method2: value,
+                                                  vibrationAxis2: undefined, // Reset axis if method changes
+                                                  durationHours2: undefined, // Reset duration
+                                                  // Add resets for temp/rate/variant if method2 can be thermal
+                                                  lowTemp2: undefined, // Hypothetical example
+                                                  highTemp2: undefined,
+                                                  rateOfChange2: undefined,
+                                                  variant2: undefined,
+                                                  durationCycles2: undefined, // Hypothetical example
+                                              }, { keepErrors: false, keepDirty: true, keepValues: true });
+                                        }} value={field.value ?? ''}>
                                             <FormControl><SelectTrigger><SelectValue placeholder="Select second method (e.g., Vibration)" /></SelectTrigger></FormControl>
                                             <SelectContent>
                                                 {/* Allow selection from all relevant methods */}
@@ -1138,16 +1245,16 @@ export default function Home() {
                                         </FormItem>
                                     )}
                                 />
-                                <div className="space-y-4 pl-4 border-l-2 border-border ml-1 mt-4">
+                                {method2 && <div className="space-y-4 pl-4 border-l-2 border-border ml-1 mt-4">
                                     {renderMethodSpecificFields(method2, true, 2)}
-                                 </div>
+                                 </div>}
                             </Card>
                         </>
                     )}
 
 
                     {/* Custom Configuration (if standard is 'none') */}
-                    {standard === 'none' && (
+                    {standard === 'none' && testType && ( // Ensure testType is selected
                          <div className="p-4 border rounded-md bg-muted/50 space-y-4">
                              <p className="text-sm font-medium text-center">Custom Test Configuration</p>
                              <FormField
@@ -1207,7 +1314,7 @@ export default function Home() {
                           <FormLabel>Equipment *</FormLabel>
                           <Select
                               onValueChange={field.onChange}
-                              value={field.value}
+                              value={field.value ?? ''}
                               // Disable selection if it's a combined test (forced) or if no options are suitable
                               disabled={testType === 'combined' || suitableEquipmentOptions.length === 0}
                           >
@@ -1219,20 +1326,14 @@ export default function Home() {
                                         ? equipmentOptions.find(e => e.value === 'combined_vibration_thermal')?.label // Show combined label directly
                                         : suitableEquipmentOptions.length > 0
                                         ? "Select equipment"
-                                        : "No suitable equipment for this type/method"
+                                        : "No suitable equipment available" // Updated message
                                     }
                                 />
                               </SelectTrigger>
                             </FormControl>
                             <SelectContent>
-                               {/* Only show options if not combined test */}
-                              {testType !== 'combined' && suitableEquipmentOptions.map((option) => (
-                                <SelectItem key={option.value} value={option.value}>
-                                  {option.label}
-                                </SelectItem>
-                              ))}
-                               {/* If combined, show only the combined option (even if disabled, shows the value) */}
-                               {testType === 'combined' && suitableEquipmentOptions.map((option) => (
+                               {/* Always show suitable options, Select handles disabled state */}
+                               {suitableEquipmentOptions.map((option) => (
                                  <SelectItem key={option.value} value={option.value}>
                                    {option.label}
                                  </SelectItem>
@@ -1271,20 +1372,27 @@ export default function Home() {
                          <FormControl>
                             <Input
                                 type="file"
-                                accept=".csv, application/vnd.ms-excel, text/csv" // More robust accept types
+                                accept=".csv, text/csv" // Simplified accept types
                                 onChange={handleFileChange}
                                 className="file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20"
                             />
                         </FormControl>
                          <FormDescription>
-                          Upload a CSV: dates, activities, costs, parts, fluid replacements.
+                          Upload a CSV: dates, activities, costs, parts, fluid replacements. Required if age is provided.
                         </FormDescription>
                          {selectedFile && <p className="text-sm text-muted-foreground mt-1">Selected: {selectedFile.name}</p>}
-                         {/* File validation errors could be shown here */}
+                         {/* Display validation error for the hidden CSV content field if applicable */}
+                          <FormField
+                              control={form.control}
+                              name="historicalCsvContent"
+                              render={({ fieldState }) => (
+                                 fieldState.error ? <FormMessage>{fieldState.error.message}</FormMessage> : null
+                              )}
+                          />
                       </FormItem>
                   </div>
 
-                  <Button type="submit" className="w-full" disabled={isLoading /* Removed !form.formState.isValid check initially */}>
+                  <Button type="submit" className="w-full" disabled={isLoading}>
                     {isLoading ? (
                       <>
                         <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -1297,12 +1405,12 @@ export default function Home() {
                       'Calculate Costs'
                     )}
                   </Button>
-                   {/* Display general form error */}
+                   {/* Display general form error (less common now with Zod refinements) */}
                     {form.formState.errors.root && (
                         <p className="text-sm text-destructive text-center mt-2">{form.formState.errors.root.message}</p>
                     )}
-                   {/* Optionally show a general validation error message on submit attempt */}
-                   {!form.formState.isValid && form.formState.isSubmitted && !form.formState.errors.root && (
+                   {/* Generic message if submit fails validation (less likely needed now) */}
+                   {!form.formState.isValid && form.formState.isSubmitted && Object.keys(form.formState.errors).length > 0 && !form.formState.errors.root && (
                      <p className="text-sm text-destructive text-center mt-2">Please review the form for errors.</p>
                    )}
                 </form>
@@ -1357,7 +1465,7 @@ export default function Home() {
           </Card>
 
            {/* Predictive Maintenance Results */}
-           {(isLoading || maintenancePrediction || (form.formState.isSubmitted && (selectedFile || form.getValues('equipmentAgeYears')))) && ( // Show card if loading, has results, or form submitted with partial maintenance inputs
+           {(isLoading || maintenancePrediction || (form.formState.isSubmitted && (values.historicalCsvContent || values.equipmentAgeYears))) && ( // Show card if loading, has results, or form submitted with partial/full maintenance inputs
             <Card className="shadow-lg">
                 <CardHeader>
                 <CardTitle className="flex items-center gap-2">
@@ -1366,7 +1474,7 @@ export default function Home() {
                 <CardDescription>Insights based on historical data (if provided).</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                 {isLoading && !maintenancePrediction && (form.getValues('equipmentAgeYears') || selectedFile) && ( // Show skeleton only when loading and maintenance inputs exist
+                 {isLoading && !maintenancePrediction && (values.equipmentAgeYears && values.historicalCsvContent) && ( // Show skeleton only when loading AND both maintenance inputs are provided
                      <div className="space-y-4">
                         <Skeleton className="h-6 w-1/2" />
                         <Skeleton className="h-6 w-1/2" />
@@ -1374,14 +1482,14 @@ export default function Home() {
                         <Skeleton className="h-10 w-full" />
                     </div>
                  )}
-                {!isLoading && !maintenancePrediction && form.formState.isSubmitted && (selectedFile || form.getValues('equipmentAgeYears')) && !(selectedFile && form.getValues('equipmentAgeYears')) && ( // Show message if submitted but missing data
-                    <p className="text-muted-foreground text-center py-4">
-                      Provide both equipment age and historical data for maintenance prediction.
+                {!isLoading && !maintenancePrediction && form.formState.isSubmitted && (values.historicalCsvContent || values.equipmentAgeYears) && !(values.historicalCsvContent && values.equipmentAgeYears) && ( // Show specific message if submitted but missing data (via Zod)
+                    <p className="text-destructive text-center py-4">
+                       Provide both equipment age and historical data (CSV) for maintenance prediction.
                     </p>
                  )}
-                 {!isLoading && !maintenancePrediction && !(selectedFile || form.getValues('equipmentAgeYears')) && !isLoading && ( // Show message if no maintenance input provided and not loading
+                 {!isLoading && !maintenancePrediction && !values.historicalCsvContent && !values.equipmentAgeYears && ( // Show prompt if no maintenance input provided and not loading/submitted
                     <p className="text-muted-foreground text-center py-4">
-                      Provide equipment age and historical data (CSV) for predictive analysis.
+                      Optionally provide equipment age and historical data (CSV) for predictive analysis.
                     </p>
                  )}
                 {maintenancePrediction && (

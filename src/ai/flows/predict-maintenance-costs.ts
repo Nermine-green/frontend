@@ -12,11 +12,10 @@ import {ai} from '@/ai/ai-instance';
 import {z} from 'genkit';
 
 const PredictMaintenanceCostsInputSchema = z.object({
-  historicalMaintenanceData: z
+  historicalCsvContent: z
     .string()
     .describe(
-      'Historical maintenance data as a CSV file, encoded as a data URI. Must include MIME type (e.g., text/csv) and use Base64 encoding. ' +
-      'Expected format: \'data:text/csv;base64,<encoded_data>\'. ' +
+      'The content of the historical maintenance CSV file as a plain text string. ' +
       'The CSV should contain details like dates, maintenance activities performed, costs incurred (specify currency if possible), parts replaced, and fluid replacements.'
     ),
   equipmentAgeYears: z
@@ -53,6 +52,8 @@ export async function predictMaintenanceCosts(
 ): Promise<PredictMaintenanceCostsOutput> {
   // Add basic validation or logging if needed before calling the flow
   console.log("Predicting maintenance costs for:", input.equipmentType, "Age:", input.equipmentAgeYears);
+  // Log a snippet of the CSV content for debugging, avoiding excessively large logs
+  console.log("CSV Content Snippet:", input.historicalCsvContent.substring(0, 200) + (input.historicalCsvContent.length > 200 ? '...' : ''));
   return predictMaintenanceCostsFlow(input);
 }
 
@@ -67,7 +68,10 @@ const predictMaintenanceCostsPrompt = ai.definePrompt({
   **Input Data:**
   - Equipment Type: {{{equipmentType}}}
   - Equipment Age: {{{equipmentAgeYears}}} years
-  - Historical Maintenance Data (CSV): {{media url=historicalMaintenanceData}}
+  - Historical Maintenance Data (CSV Content):
+  \`\`\`csv
+  {{{historicalCsvContent}}}
+  \`\`\`
 
   **Analysis Task:**
   1.  **Predict Costs for Next Year:** Estimate the likely total maintenance cost (excluding fluid replacements) and the specific cost for fluid replacements in Euros (€).
