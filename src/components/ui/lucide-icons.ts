@@ -23,5 +23,8 @@ export {
   Circle,
   PanelLeft,
   ShieldCheck, // Used in maintenance prediction result
+  Settings, // Added for Maintenance page header
+  User, // Added for Maintenance task type
+  Clock, // Added for Maintenance duration
+  Bot, // Added for Maintenance machine type
 } from 'lucide-react';
-```

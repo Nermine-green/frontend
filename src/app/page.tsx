@@ -48,7 +48,7 @@ import {
 } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Thermometer, Zap, TrendingUp, Leaf, Euro, Wrench, Droplets, Activity, Layers, Asterisk, ShieldCheck } from 'lucide-react'; // Added ShieldCheck
+import { Thermometer, Zap, TrendingUp, Leaf, Euro, Wrench, Droplets, Activity, Layers, Asterisk, ShieldCheck, Settings } from 'lucide-react'; // Added ShieldCheck, Settings
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import Link from 'next/link';
@@ -333,6 +333,7 @@ export default function Home() {
   const [maintenancePrediction, setMaintenancePrediction] = useState<PredictMaintenanceCostsOutput | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  // const formValues = form.watch(); // Watch all form values
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -980,9 +981,15 @@ export default function Home() {
         <p className="text-lg text-muted-foreground">
           Estimate costs and environmental impact for your product resilience tests at ACTIA.
         </p>
-         <Button variant="link" asChild>
-            <Link href="/login">Logout (Placeholder)</Link>
-        </Button>
+         {/* Navigation Links */}
+         <div className="mt-4 space-x-4">
+            <Button variant="link" asChild>
+                <Link href="/maintenance">Go to Maintenance Calculator</Link>
+            </Button>
+             <Button variant="link" asChild>
+                <Link href="/login">Logout (Placeholder)</Link>
+            </Button>
+         </div>
       </header>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
