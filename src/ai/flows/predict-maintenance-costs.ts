@@ -11,6 +11,10 @@
 import {ai} from '@/ai/ai-instance';
 import {z} from 'genkit';
 
+// Define a maximum character limit for the CSV content to prevent excessively large inputs
+const MAX_CSV_CHARS = 5000;
+
+
 const PredictMaintenanceCostsInputSchema = z.object({
   historicalCsvContent: z
     .string()
@@ -53,7 +57,7 @@ export async function predictMaintenanceCosts(
   // Add basic validation or logging if needed before calling the flow
   console.log("Predicting maintenance costs for:", input.equipmentType, "Age:", input.equipmentAgeYears);
   // Log a snippet of the CSV content for debugging, avoiding excessively large logs
-  console.log("CSV Content Snippet:", input.historicalCsvContent.substring(0, 200) + (input.historicalCsvContent.length > 200 ? '...' : ''));
+  console.log("CSV Content Snippet (Original Length:", input.historicalCsvContent.length, "):", input.historicalCsvContent.substring(0, 200) + (input.historicalCsvContent.length > 200 ? '...' : ''));
   return predictMaintenanceCostsFlow(input);
 }
 
@@ -64,11 +68,12 @@ const predictMaintenanceCostsPrompt = ai.definePrompt({
   prompt: `You are an AI expert specializing in predictive maintenance for laboratory testing equipment, focusing on cost prediction and reliability assessment.
 
   Analyze the provided historical maintenance data (CSV format), considering the equipment's specific type and age. Your goal is to predict future costs and provide actionable insights.
+  If the provided historical data is truncated due to length limits, base your analysis on the available portion.
 
   **Input Data:**
   - Equipment Type: {{{equipmentType}}}
   - Equipment Age: {{{equipmentAgeYears}}} years
-  - Historical Maintenance Data (CSV Content):
+  - Historical Maintenance Data (CSV Content - may be truncated):
   \`\`\`csv
   {{{historicalCsvContent}}}
   \`\`\`
@@ -96,9 +101,22 @@ const predictMaintenanceCostsFlow = ai.defineFlow<
   async (input) => {
     // Potential pre-processing: Could analyze the CSV data here first if needed,
     // e.g., calculate average time between failures, before sending to the LLM.
-    // For now, directly pass the input to the prompt.
 
-    const {output} = await predictMaintenanceCostsPrompt(input);
+    // Truncate the CSV content if it exceeds the maximum character limit
+    let truncatedCsvContent = input.historicalCsvContent;
+    if (truncatedCsvContent.length > MAX_CSV_CHARS) {
+        console.warn(`Historical CSV content exceeds ${MAX_CSV_CHARS} characters. Truncating input to AI model.`);
+        truncatedCsvContent = truncatedCsvContent.substring(0, MAX_CSV_CHARS) + "\n... (data truncated)";
+    }
+
+    const processedInput = {
+        ...input,
+        historicalCsvContent: truncatedCsvContent,
+    };
+
+
+    // Pass the potentially truncated input to the prompt.
+    const {output} = await predictMaintenanceCostsPrompt(processedInput);
 
     if (!output) {
         throw new Error("AI model failed to generate a valid prediction.");
