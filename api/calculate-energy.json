@@ -1,0 +1,78 @@
+[
+  {
+    "csv_file": "2-1_test.csv",
+    "field1": "Test Type",
+    "field2": "Standard",
+    "field3": "Method",
+    "field4": "Initial Temp (°C)",
+    "field5": "Recovery Temp (°C)",
+    "field6": "Low Temp (°C)",
+    "field7": "Power (kW)"
+  },
+  {
+    "csv_file": "2-2_test.csv",
+    "field1": "Test Type",
+    "field2": "Standard",
+    "field3": "Method",
+    "field4": "Initial Temp (°C)",
+    "field5": "Recovery Temp (°C)",
+    "field6": "High Temp (°C)",
+    "field7": "Power (kW)"
+  },
+  {
+    "csv_file": "2-14-Na_test.csv",
+    "field1": "Test Type",
+    "field2": "Standard",
+    "field3": "Method",
+    "field4": "Initial Temp (°C)",
+    "field5": "Recovery Temp (°C)",
+    "field6": "Low Temp (°C)",
+    "field7": "High Temp (°C)",
+    "field8": "Power (kW)"
+  },
+  {
+    "csv_file": "2-14-Nb_test.csv",
+    "field1": "Test Type",
+    "field2": "Standard",
+    "field3": "Method",
+    "field4": "Initial Temp (°C)",
+    "field5": "Recovery Temp (°C)",
+    "field6": "Low Temp (°C)",
+    "field7": "High Temp (°C)",
+    "field8": "Rate of change (°C/min)",
+    "field9": "Power (kW)"
+  },
+  {
+    "csv_file": "2-30_test.csv",
+    "field1": "Test Type",
+    "field2": "Standard",
+    "field3": "Method",
+    "field4": "Initial Temp (°C)",
+    "field5": "Recovery Temp (°C)",
+    "field6": "High Temp (°C)",
+    "field7": "Variant",
+    "field8": "Power (kW) per 24h"
+  },
+  {
+    "csv_file": "2-38_test.csv",
+    "field1": "Test Type",
+    "field2": "Standard",
+    "field3": "Method",
+    "field4": "Initial Temp (°C)",
+    "field5": "Recovery Temp (°C)",
+    "field6": "Low Temp (°C)",
+    "field7": "High Temp (°C)",
+    "field8": "Power (kW) per 240h"
+  },
+  {
+    "csv_file": "2-78_test.csv",
+    "field1": "Test Type",
+    "field2": "Standard",
+    "field3": "Method",
+    "field4": "Initial Temp (°C)",
+    "field5": "Recovery Temp (°C)",
+    "field6": "High Temp (°C)",
+    "field7": "Humidity (%)",
+    "field8": "Power (kW)"
+  }
+]

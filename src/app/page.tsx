@@ -2,10 +2,11 @@
 'use client';
 
 import * as React from 'react';
-import type { FieldPath } from 'react-hook-form'; // Import FieldPath
+import type { FieldPath } from 'react-hook-form'; 
 import { useState, useEffect } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm, Controller } from 'react-hook-form';
+import './page.css';
 import * as z from 'zod';
 import {
   calculateCosts,
@@ -16,8 +17,6 @@ import {
   getEquipmentPowerConsumption,
   type EquipmentPowerConsumption,
 } from '@/services/energy-consumption';
-// import { getEmissionFactor, type EmissionFactor } from '@/services/emission-factors'; // Keep static for now
-// import { getElectricityCost, type ElectricityCost } from '@/services/electricity-cost'; // Keep static for now
 import { predictMaintenanceCosts, type PredictMaintenanceCostsInput, type PredictMaintenanceCostsOutput } from '@/ai/flows/predict-maintenance-costs'; // Added PredictMaintenanceCostsInput
 import { Button } from '@/components/ui/button';
 import {
@@ -48,10 +47,11 @@ import {
 } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Thermometer, Zap, TrendingUp, Leaf, Euro, Wrench, Droplets, Activity, Layers, Asterisk, ShieldCheck, Settings } from 'lucide-react'; // Added ShieldCheck, Settings
+import { Thermometer, Zap, TrendingUp, Leaf, Euro, Wrench, Droplets, Activity, Layers, Asterisk, ShieldCheck, Settings, Sun } from 'lucide-react'; // Added ShieldCheck, Settings, Sun
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation'; // Use next/navigation for app directory
 
 // --- Constants ---
 const LOCATION = 'Tunisia';
@@ -76,9 +76,9 @@ type VibrationAxis = 'horizontal' | 'vertical';
 // --- Options ---
 const testTypeOptions: { value: TestType; label: string; icon?: React.ReactNode }[] = [
   { value: 'thermal', label: 'Thermal', icon: <Thermometer className="h-4 w-4 text-red-500" /> },
-  { value: 'thermal_shock', label: 'Thermal Shock', icon: <Thermometer className="h-4 w-4 text-blue-500" /> },
+  { value: 'thermal_shock', label: 'Thermal Shock', icon: <Thermometer className="h-4 w-4 text-yellow-500" /> },
   { value: 'vibration', label: 'Vibration', icon: <Activity className="h-4 w-4 text-purple-500" /> },
-  { value: 'combined', label: 'Combined (Thermal + Vibration)', icon: <Layers className="h-4 w-4 text-orange-500" /> },
+  { value: 'combined', label: 'Combined (Thermal + Vibration)', icon: <Layers className="h-4 w-4 text-blue-500" /> },
 ];
 
 const standardOptions: { value: Standard; label: string }[] = [
@@ -148,12 +148,12 @@ const vibrationAxisOptions: { value: VibrationAxis; label: string }[] = [
 const baseSchema = z.object({
   testType: z.enum(['thermal', 'thermal_shock', 'vibration', 'combined']),
   standard: z.enum(['IEC 60068', 'none']),
-  equipment: z.string({ required_error: "Please select equipment." }).min(1, "Please select equipment."), // Now always required initially
-  initialTemp: z.literal(INITIAL_RECOVERY_TEMP).optional(), // Fixed value
-  recoveryTemp: z.literal(INITIAL_RECOVERY_TEMP).optional(), // Fixed value
+  equipment: z.string({ required_error: "Please select equipment." }).min(1, "Please select equipment."),
+  initialTemp: z.literal(INITIAL_RECOVERY_TEMP).optional(),
+  recoveryTemp: z.literal(INITIAL_RECOVERY_TEMP).optional(),
   historicalCsvContent: z.string().optional().describe("Plain text content of the historical maintenance CSV"),
-  equipmentAgeYears: z.coerce.number().positive("Age must be positive").optional().describe("Age of the equipment in years"),
-  customPowerKw: z.coerce.number().positive("Power must be positive").optional(), // For custom tests
+  customPowerKw: z.coerce.number().positive("Power must be positive").optional(),
+  humidity: z.coerce.number().optional(), // Added humidity field
 });
 
 // Schema specific to Thermal tests
@@ -311,30 +311,22 @@ const formSchema = z.discriminatedUnion('testType', [
               if (!data.durationHours2) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Duration 2 (Hours) required for custom combined", path: ['durationHours2'] });
          }
     }
-
-    // Predictive Maintenance Refinements
-    if (data.equipmentAgeYears !== undefined && data.historicalCsvContent === undefined) {
-        ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Historical data CSV is required when equipment age is provided for prediction.", path: ['historicalCsvContent'] }); // Point error to file input technically
-    }
-    if (data.equipmentAgeYears === undefined && data.historicalCsvContent !== undefined) {
-        ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Equipment age is required when historical data is provided for prediction.", path: ['equipmentAgeYears'] });
-    }
-
 });
 
 
-type FormValues = z.infer<typeof formSchema>;
+type FormValues = z.infer<typeof formSchema> & {
+  lowTemp2?: number; // Add this line to support form.setValue('lowTemp2', -10)
+};
 
 
 // --- Component ---
 export default function Home() {
   const { toast } = useToast();
-  const [results, setResults] = useState<CostCalculationResult | null>(null);
-  const [maintenancePrediction, setMaintenancePrediction] = useState<PredictMaintenanceCostsOutput | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  // const formValues = form.watch(); // Watch all form values
+  const router = useRouter();
+  const [role, setRole] = useState<'user' | 'admin' | null>(null);
+  const [maintenanceTasksTotal, setMaintenanceTasksTotal] = useState(0); // Add this line
 
+  // Only ONE useForm call!
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
@@ -353,19 +345,56 @@ export default function Home() {
       durationHours1: undefined,
       durationCycles1: undefined,
       durationHours2: undefined,
-      equipmentAgeYears: undefined,
       customPowerKw: undefined,
       historicalCsvContent: undefined, // Initialize CSV content
     },
-     mode: 'onChange', // Validate on change for better UX
+    mode: 'onChange', // Validate on change for better UX
   });
 
-  const testType = form.watch('testType');
+  // Watchers must come after useForm
+  const method = form.watch('method' as any);
+  const method1 = form.watch('method1');
+  const method2 = form.watch('method2');
   const standard = form.watch('standard');
-  const method = form.watch('method' as any); // Watch the specific method based on type
-  const method1 = form.watch('method1'); // Watch combined method 1
-  const method2 = form.watch('method2'); // Watch combined method 2
-  const equipmentAgeYears = form.watch('equipmentAgeYears'); // Watch age for results display
+
+  useEffect(() => {
+    if (method === '2-38: Z/AD' && standard === 'IEC 60068') {
+      form.setValue('lowTemp', -10);
+    }
+    // For combined, handle method1/method2 if needed
+    if (method1 === '2-38: Z/AD' && standard === 'IEC 60068') {
+      form.setValue('lowTemp1', -10);
+    }
+    if (method2 === '2-38: Z/AD' && standard === 'IEC 60068') {
+      form.setValue('lowTemp2', -10);
+    }
+  }, [method, method1, method2, standard, form]);
+
+  // Client-side redirect if no token
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const token = localStorage.getItem('authToken');
+      if (!token) {
+        router.push('/login');
+      }
+
+      // Assume role is stored in localStorage as 'userRole'
+      const userRole = localStorage.getItem('userRole') as 'user' | 'admin' | null;
+      setRole(userRole || 'user'); // Default to 'user' if not set
+
+      // Read maintenanceTasksTotal from localStorage and set state
+      const maintTotal = localStorage.getItem('maintenanceTasksTotal');
+      setMaintenanceTasksTotal(maintTotal ? parseFloat(maintTotal) : 0);
+    }
+  }, [router]);
+
+  const [results, setResults] = useState<CostCalculationResult | null>(null);
+  const [maintenancePrediction, setMaintenancePrediction] = useState<PredictMaintenanceCostsOutput | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+
+  const testType = form.watch('testType');
+  // standard, method, method1, method2 already declared above
   const historicalCsvContent = form.watch('historicalCsvContent'); // Watch csv content for results display
 
   // Determine equipment suitability based on test type and method
@@ -390,18 +419,43 @@ export default function Home() {
     }
   }, [testType]);
 
-   // Reset equipment if it becomes unsuitable when testType/method changes, or force combined
-   useEffect(() => {
+  // Reset equipment if it becomes unsuitable when testType/method changes, or force combined
+  useEffect(() => {
     const currentEquipment = form.getValues('equipment');
     const isCombined = form.getValues('testType') === 'combined';
 
     if (isCombined && currentEquipment !== 'combined_vibration_thermal') {
-         form.setValue('equipment', 'combined_vibration_thermal');
+      form.setValue('equipment', 'combined_vibration_thermal');
     } else if (!isCombined && currentEquipment && !suitableEquipmentOptions.some(opt => opt.value === currentEquipment)) {
       form.resetField('equipment');
     }
   }, [suitableEquipmentOptions, form]);
 
+  // Update fetchPowerFromCsv to return full backend response
+  async function fetchPowerFromCsv(params: Record<string, any>): Promise<{ power_kw: number, energy_consumption_kwh: number, energy_cost_eur: number }> {
+    // Stringify all values except duration/durationHours
+    const payload: Record<string, any> = {};
+    for (const [k, v] of Object.entries(params)) {
+      if (k === "duration" || k === "durationHours" || k === "csv_file") {
+        payload[k] = v;
+      } else if (v !== undefined && v !== null) {
+        payload[k] = typeof v === "string" ? v : String(v);
+      }
+    }
+    const response = await fetch('http://localhost:8000/api/calculate-energy/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!response.ok) throw new Error('Failed to fetch power from CSV');
+    const data = await response.json();
+    // Return all relevant fields
+    return {
+      power_kw: data.power_kw ?? 0,
+      energy_consumption_kwh: data.energy_consumption_kwh ?? 0,
+      energy_cost_eur: data.energy_cost_eur ?? 0,
+    };
+  }
 
   // --- Helper Functions ---
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -443,8 +497,11 @@ export default function Home() {
 
      switch (values.testType) {
        case 'thermal':
-         if (values.method === '2-30: Db' || values.method === '2-38: Z/AD') {
+         if (values.method === '2-30: Db') {
            return (values.durationCycles ?? 0) * 24; // Cycles to hours
+         }
+         if (values.method === '2-38: Z/AD') {
+           return (values.durationCycles ?? 0) * 24; // FIX: 1 cycle = 24h, not 240h
          }
          return values.durationHours ?? 0;
        case 'thermal_shock':
@@ -454,18 +511,25 @@ export default function Home() {
        case 'combined':
          // For combined IEC tests, calculate duration for each part and take the maximum
          let duration1 = 0;
-         if ((values.method1 === '2-30: Db' || values.method1 === '2-38: Z/AD') && values.durationCycles1) {
+         if (values.method1 === '2-30: Db'&& values.durationCycles1) {
              duration1 = values.durationCycles1 * 24;
-         } else if (values.durationHours1) {
+         } 
+         if (values.method1 === '2-38: Z/AD' && values.durationCycles1) {
+             duration1 = values.durationCycles1 * 24; // FIX: 1 cycle = 24h
+         } 
+         else if (values.durationHours1) {
              duration1 = values.durationHours1;
          }
 
          let duration2 = 0;
-          // Assuming method2 in combined is likely vibration (hours) or a thermal (hours/cycles)
-         if ((values.method2 === '2-30: Db' || values.method2 === '2-38: Z/AD') && (values as any).durationCycles2) { // Need durationCycles2 if possible
-             // Assuming a hypothetical durationCycles2 field for combined
+         // Assuming method2 in combined is likely vibration (hours) or a thermal (hours/cycles)
+         if (values.method2 === '2-30: Db' && (values as any).durationCycles2) {
               duration2 = (values as any).durationCycles2 * 24;
-         } else if (values.durationHours2) {
+         } 
+         if (values.method2 === '2-38: Z/AD' && (values as any).durationCycles2) {
+              duration2 = (values as any).durationCycles2 * 24; // FIX: 1 cycle = 24h
+         } 
+         else if (values.durationHours2) {
               duration2 = values.durationHours2;
          }
 
@@ -504,78 +568,199 @@ export default function Home() {
       }
 
       let totalPowerConsumptionkW = 0;
+      let backendEnergyKwh = 0;
+      let backendEnergyCost = 0;
 
-       if (values.standard === 'none') {
-           totalPowerConsumptionkW = values.customPowerKw ?? 0;
-           if (totalPowerConsumptionkW <= 0) {
-                form.setError("customPowerKw", { type: "manual", message: "Custom power must be positive." });
-                throw new Error("Invalid custom power input.");
-           }
-       } else if (values.testType === 'combined') {
-            // Fetch power for both parts and sum them up
+      if (values.standard === 'none') {
+        totalPowerConsumptionkW = values.customPowerKw ?? 0;
+        if (totalPowerConsumptionkW <= 0) {
+          form.setError("customPowerKw", { type: "manual", message: "Custom power must be positive." });
+          throw new Error("Invalid custom power input.");
+        }
+        backendEnergyKwh = totalPowerConsumptionkW * durationHours;
+        backendEnergyCost = backendEnergyKwh * ELECTRICITY_COST_PER_KWH;
+      } else if (values.testType === 'combined') {
+           // Fetch power for both parts and sum them up
              if (!values.method1 || !values.method2) {
                  throw new Error("Methods for combined test are not fully selected.");
              }
             const [power1Data, power2Data] = await Promise.all([
-                 getEquipmentPowerConsumption(values.method1, values.equipment), // Equipment is forced to combined
+                 getEquipmentPowerConsumption(values.method1, values.equipment),
                  getEquipmentPowerConsumption(values.method2, values.equipment)
             ]);
             totalPowerConsumptionkW = power1Data.powerConsumptionkW + power2Data.powerConsumptionkW;
-       } else {
-             if (!values.method) {
-                 throw new Error("Method is not selected.");
-             }
-            // Fetch power for single test type
-            const powerData = await getEquipmentPowerConsumption(values.method, values.equipment);
-            totalPowerConsumptionkW = powerData.powerConsumptionkW;
+            backendEnergyKwh = totalPowerConsumptionkW * durationHours;
+            backendEnergyCost = backendEnergyKwh * ELECTRICITY_COST_PER_KWH;
+      } else {
+            // Build csvParams based on selected method and test type
+            let csvParams: Record<string, any> = {};
+            switch (values.method) {
+              case '2-1: A':
+                csvParams = {
+                  csv_file: '2-1_test.csv', // Only filename, backend knows the folder
+                  'Test Type': 'thermal',
+                  'Standard': values.standard,
+                  'Method': values.method,
+                  'Initial Temp (°C)': INITIAL_RECOVERY_TEMP,
+                  'Recovery Temp (°C)': INITIAL_RECOVERY_TEMP,
+                  'Low Temp (°C)': Number(values.lowTemp), // Ensure this is a number
+                  'Power (kW)': undefined, // backend will extract this
+                  duration: durationHours,
+                };
+                break;
+              case '2-2: B':
+                csvParams = {
+                  csv_file: '2-2_test.csv', // Only filename, backend knows the folder
+                  'Test Type': 'thermal',
+                  'Standard': values.standard,
+                  'Method': values.method,
+                  'Initial Temp (°C)': INITIAL_RECOVERY_TEMP,
+                  'Recovery Temp (°C)': INITIAL_RECOVERY_TEMP,
+                  'High Temp (°C)': Number(values.highTemp),
+                  'Power (kW)': undefined,
+                  duration: durationHours,
+                };
+                break;
+              case '2-14: Na':
+                csvParams = {
+                  csv_file: '2-14-Na_test.csv', // Only filename, backend knows the folder
+                  'Test Type': 'thermal_shock',
+                  'Standard': values.standard,
+                  'Method': values.method,
+                  'Initial Temp (°C)': INITIAL_RECOVERY_TEMP,
+                  'Recovery Temp (°C)': INITIAL_RECOVERY_TEMP,
+                  'Low Temp (°C)': Number(values.lowTemp),
+                  'High Temp (°C)': Number(values.highTemp),
+                  'Power (kW)': undefined,
+                  duration: durationHours,
+                };
+                break;
+              case '2-14: Nb':
+                csvParams = {
+                  csv_file: '2-14-Nb_test.csv', // Only filename, backend knows the folder
+                  'Test Type': 'thermal',
+                  'Standard': values.standard,
+                  'Method': values.method,
+                  'Initial Temp (°C)': INITIAL_RECOVERY_TEMP,
+                  'Recovery Temp (°C)': INITIAL_RECOVERY_TEMP,
+                  'Low Temp (°C)': Number(values.lowTemp),
+                  'High Temp (°C)': Number(values.highTemp),
+                  'Rate of change (°C/min)': Number(values.rateOfChange),
+                  'Power (kW)': undefined,
+                  duration: durationHours,
+                };
+                break;
+              case '2-30: Db':
+                csvParams = {
+                  csv_file: '2-30_test.csv', // Only filename, backend knows the folder
+                  'Test Type': 'thermal',
+                  'Standard': values.standard,
+                  'Method': values.method,
+                  'Initial Temp (°C)': INITIAL_RECOVERY_TEMP,
+                  'Recovery Temp (°C)': INITIAL_RECOVERY_TEMP,
+                  'High Temp (°C)': Number(values.highTemp),
+                  'Variant': values.variant,
+                  'Power (kW) per 24h': undefined,
+                  duration: durationHours,
+                };
+                break;
+              case '2-38: Z/AD':
+                csvParams = {
+                  csv_file: '2-38_test.csv', // Only filename, backend knows the folder
+                  'Test Type': 'thermal',
+                  'Standard': values.standard,
+                  'Method': values.method,
+                  'Initial Temp (°C)': INITIAL_RECOVERY_TEMP,
+                  'Recovery Temp (°C)': INITIAL_RECOVERY_TEMP,
+                  'Low Temp (°C)': -10,
+                  'High Temp (°C)': Number(values.highTemp),
+                  'Power (kW) per 240h': undefined,
+                  duration: durationHours,
+                };
+                break;
+              case '2-78: Cab':
+                csvParams = {
+                  csv_file: '2-78_test.csv', // Only filename, backend knows the folder
+                  'Test Type': 'thermal',
+                  'Standard': values.standard,
+                  'Method': values.method,
+                  'Initial Temp (°C)': INITIAL_RECOVERY_TEMP,
+                  'Recovery Temp (°C)': INITIAL_RECOVERY_TEMP,
+                  'High Temp (°C)': Number(values.highTemp),
+                  'Humidity (%)': Number(values.humidity),
+                  'Power (kW)': undefined,
+                  duration: durationHours,
+                };
+                break;
+              default:
+                throw new Error("Unknown method selected.");
+            }
+
+            // Remove undefined fields (except for Power columns, which backend expects)
+            Object.keys(csvParams).forEach(
+              (key) => csvParams[key] === undefined && !key.toLowerCase().includes('power') && delete csvParams[key]
+            );
+
+            // Fetch from backend and use backend's energy/cost
+            const backendResult = await fetchPowerFromCsv(csvParams);
+            // Log all backend values
+            console.log("Backend result:", backendResult);
+            totalPowerConsumptionkW = backendResult.power_kw;
+            backendEnergyKwh = backendResult.energy_consumption_kwh;
+            backendEnergyCost = backendResult.energy_cost_eur;
        }
 
 
       // Define fixed costs based on equipment
-       let equipmentHourlyCost = 0;
-       switch (values.equipment) {
-         case 'thermal_chamber': equipmentHourlyCost = 5; break;
-         case 'thermal_shock_chamber': equipmentHourlyCost = 7.5; break;
-         case 'vibrating_pot': equipmentHourlyCost = 100; break;
-         case 'combined_vibration_thermal': equipmentHourlyCost = 105; break;
-         default:
-             // This case should ideally not be reached if validation is correct
-             console.warn("Equipment type missing or invalid, using default hourly cost.");
-             equipmentHourlyCost = 10; // Arbitrary default
-       }
+      let equipmentHourlyCost = 0;
+      switch (values.equipment) {
+        case 'thermal_chamber': equipmentHourlyCost = 5; break;
+        case 'thermal_shock_chamber': equipmentHourlyCost = 7.5; break;
+        case 'vibrating_pot': equipmentHourlyCost = 100; break;
+        case 'combined_vibration_thermal': equipmentHourlyCost = 105; break;
+        default:
+          equipmentHourlyCost = 10;
+      }
 
-
+      // --- Use maintenanceTasksTotal from state (filled from Maintenance Task Cost interface) ---
       const fixedCosts: FixedCosts = {
         rh: FIXED_COSTS_RH,
         transport: FIXED_COSTS_TRANSPORT,
         equipmentHourly: equipmentHourlyCost,
+        maintenanceTasksTotal: maintenanceTasksTotal, // <--- Use value from Maintenance Task Cost
       };
 
-      // Placeholder for age factor - could be derived from equipmentAgeYears if needed
-      const ageFactor = 1 + (values.equipmentAgeYears ? values.equipmentAgeYears * 0.02 : 0); // Example: 2% cost increase per year for variable parts
+      // Placeholder for age factor - no equipmentAgeYears, so always 1
+      const ageFactor = 1;
 
-      const calculatedResults = calculateCosts(
-        durationHours,
-        totalPowerConsumptionkW,
-        ELECTRICITY_COST_PER_KWH,
-        EMISSION_FACTOR_KGCO2_PER_KWH,
-        fixedCosts,
-        ageFactor
-      );
+      // Use backendEnergyKwh and backendEnergyCost in results
+      const calculatedResults = {
+        ...calculateCosts(
+          durationHours,
+          totalPowerConsumptionkW,
+          ELECTRICITY_COST_PER_KWH,
+          EMISSION_FACTOR_KGCO2_PER_KWH,
+          fixedCosts,
+          ageFactor
+        ),
+        // Override with backend values
+        energyConsumptionkWh: backendEnergyKwh,
+        energyCost: backendEnergyCost,
+      };
 
       setResults(calculatedResults);
 
       // --- Predictive Maintenance ---
       let maintenancePredictionResult: PredictMaintenanceCostsOutput | null = null;
-      // Use historicalCsvContent from form values now
-      if (values.historicalCsvContent && values.equipmentAgeYears) {
+      // Use only historicalCsvContent for prediction
+      if (values.historicalCsvContent) {
         try {
            const equipmentLabel = equipmentOptions.find(e => e.value === values.equipment)?.label || values.equipment;
 
            const predictionInput: PredictMaintenanceCostsInput = {
               historicalCsvContent: values.historicalCsvContent,
-              equipmentAgeYears: values.equipmentAgeYears,
               equipmentType: equipmentLabel,
+              equipmentAgeYears: 1, // Provide a default or calculated value as needed
            };
            console.log("Calling AI prediction with:", predictionInput); // Log AI input
           maintenancePredictionResult = await predictMaintenanceCosts(predictionInput);
@@ -590,19 +775,11 @@ export default function Home() {
             variant: "destructive",
           });
         }
-      } else if (form.formState.isSubmitted && (values.equipmentAgeYears || values.historicalCsvContent) && !(values.equipmentAgeYears && values.historicalCsvContent)) {
-         // Show warning only if submitted and one (but not both) of the fields is filled (based on Zod refinement now)
-         // This toast might be redundant due to Zod validation, but can stay as a fallback.
-         toast({
-            title: "Missing Info for Maintenance Prediction",
-            description: "Provide both equipment age and historical data (CSV) for prediction.",
-            variant: "destructive",
-          });
       }
 
       toast({
         title: 'Calculation Successful',
-        description: 'Costs and environmental impact have been estimated.',
+        description: 'Costs and environmental impact have been calculated.',
       });
     } catch (error: any) {
       console.error('Calculation failed:', error);
@@ -653,13 +830,13 @@ export default function Home() {
         isCombinedPart: boolean = false, // Flag for combined test parts
         partNumber: 1 | 2 = 1 // Indicates if it's for method1 or method2 in combined
     ) => {
-        if (!methodValue || standard === 'none') return null;
+        if (!methodValue || standard === 'none') return <></>;
 
         // Helper to generate field names dynamically for combined parts
         const name = (fieldName: string): FieldPath<FormValues> => {
              if (!isCombinedPart) return fieldName as FieldPath<FormValues>;
              // Construct field names like 'lowTemp1', 'durationHours2' etc.
-             const baseName = fieldName as keyof Omit<FormValues, 'testType' | 'standard' | 'equipment' | 'initialTemp' | 'recoveryTemp' | 'historicalCsvContent' | 'equipmentAgeYears' | 'customPowerKw' | 'method'>; // Type assertion might be needed
+             const baseName = fieldName as keyof Omit<FormValues, 'testType' | 'standard' | 'equipment' | 'initialTemp' | 'recoveryTemp' | 'historicalCsvContent' | 'customPowerKw' | 'method'>; // Type assertion might be needed
              return `${baseName}${partNumber}` as FieldPath<FormValues>;
         };
 
@@ -681,7 +858,7 @@ export default function Home() {
               </FormControl>
             </FormItem>
         );
-         const recoveryTempField = (
+        const recoveryTempField = (
             <FormItem key={`recoveryTemp-${partNumber}`}>
               <FormLabel>Recovery Temperature</FormLabel>
               <FormControl>
@@ -844,7 +1021,7 @@ export default function Home() {
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Variant *</FormLabel>
-                  <Select onValueChange={field.onChange} value={field.value ?? ''}>
+                  <Select onValueChange={field.onChange} value={field.value !== undefined ? String(field.value) : ''}>
                     <FormControl><SelectTrigger><SelectValue placeholder="Select Variant" /></SelectTrigger></FormControl>
                     <SelectContent>{variantOptions.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}</SelectContent>
                   </Select>
@@ -861,11 +1038,6 @@ export default function Home() {
           </>
         );
       case '2-38: Z/AD':
-        // Pre-set fixed low temperature dynamically
-        useEffect(() => {
-             const targetLowTempName = isCombinedPart ? `lowTemp${partNumber}` : 'lowTemp';
-             form.setValue(targetLowTempName as FieldPath<FormValues>, -10);
-        }, [form, isCombinedPart, partNumber, lowTempName]); // Rerun if context changes
         return (
           <>
              {initialTempField}
@@ -908,6 +1080,8 @@ export default function Home() {
                 </FormItem> )} />
           </>
         );
+      
+
       case '2-78: Cab':
         return (
           <>
@@ -949,7 +1123,7 @@ export default function Home() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Vibration Axis *</FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value ?? ''}>
+                      <Select onValueChange={field.onChange} value={field.value !== undefined ? String(field.value) : ''}>
                         <FormControl><SelectTrigger><SelectValue placeholder="Select Axis" /></SelectTrigger></FormControl>
                         <SelectContent>{vibrationAxisOptions.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}</SelectContent>
                       </Select>
@@ -974,31 +1148,101 @@ export default function Home() {
 
   // --- JSX ---
   return (
-    <div className="container mx-auto p-4 md:p-8">
-      {/* Header */}
-      <header className="mb-8 text-center">
-        <h1 className="text-4xl font-bold text-primary mb-2">EcoTest Insight</h1>
-        <p className="text-lg text-muted-foreground">
-          Estimate costs and environmental impact for your product resilience tests at ACTIA.
-        </p>
-         {/* Navigation Links */}
-         <div className="mt-4 space-x-4">
-            <Button variant="link" asChild>
-                <Link href="/maintenance">Go to Maintenance Calculator</Link>
-            </Button>
-             <Button variant="link" asChild>
-                <Link href="/login">Logout (Placeholder)</Link>
-            </Button>
-         </div>
-      </header>
+    <div
+      className="container mx-auto p-4 md:p-8 min-h-screen flex flex-col page-background"
+    >
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+
+      {/* Navbar */}
+      {role === 'admin' ? (
+        // --- Vertical Navbar for Admin ---
+        <aside className="fixed left-0 top-0 h-full w-56 bg-white border-r border-b2dfdb flex flex-col z-40">
+          <div className="p-6 border-b border-b2dfdb">
+            <h2 className="text-2xl font-bold mb-2">Admin Panel</h2>
+            <p className="text-xs text-muted-foreground">ACTIA Engineering Services</p>
+          </div>
+          <nav className="flex-1 flex flex-col gap-2 p-4">
+            <Button variant="link" asChild className="justify-start btn-black-white">
+              <Link href="/admin/dashboard">Dashboard</Link>
+            </Button>
+            <Button variant="link" asChild className="justify-start btn-black-white">
+              <Link href="/admin/tests">Manage Tests</Link>
+            </Button>
+            <Button variant="link" asChild className="justify-start btn-black-white">
+              <Link href="/admin/maintenance">Maintenance Records</Link>
+            </Button>
+            <Button variant="link" asChild className="justify-start btn-black-white">
+              <Link href="/admin/users">User Management</Link>
+            </Button>
+            {/* Add more admin links as needed */}
+            <Button
+              variant="link"
+              className="justify-start text-destructive"
+              onClick={() => {
+                if (typeof window !== 'undefined') {
+                  localStorage.removeItem('authToken');
+                  localStorage.removeItem('userRole');
+                  localStorage.removeItem('username');
+                  localStorage.removeItem('email');
+                }
+          
+                router.push('/login');
+              }}
+            >
+              Logout
+            </Button>
+          </nav>
+        </aside>
+      ) : (
+        // --- Horizontal Navbar for User ---
+        <header className="mb-8 text-center">
+        <h1 className="text-8xl font-bold text-primary mb-2 flex items-center justify-center gap-2">
+                   IEC 60068-2 Testing Costs
+          </h1>
+          <p className="text-lg text-muted-foreground">
+            Quantitative Assessment of Costs and Environmental Impact in Product Resilience Testing at ACTIA ES.
+          </p>
+          <p className="text-lg text-muted-foreground">
+            Visit the "Test Preparation" page to fill all required informations there first.
+          </p>
+          <div className="mt-4 space-x-4 flex justify-center">
+            <Button variant="link" asChild className="btn-black-white">
+              <Link href="/maintenance">Test Preparation costs Calculator</Link>
+            </Button>
+            <Button
+              variant="link"
+              className="btn-black-white"
+              onClick={() => {
+                if (typeof window !== 'undefined') {
+                  localStorage.removeItem('authToken');
+                  localStorage.removeItem('userRole');
+                  localStorage.removeItem('username');
+                  localStorage.removeItem('email');
+                }
+                router.push('/login');
+              }}
+            >
+              Logout
+            </Button>
+          </div>
+         
+        </header>
+      )}
+
+      <div className={role === 'admin' ? "grid grid-cols-1 lg:grid-cols-3 gap-8 ml-56" : "grid grid-cols-1 lg:grid-cols-3 gap-8"}>
         {/* Input Form Column */}
-        <div className="lg:col-span-1">
-          <Card className="shadow-lg">
+        <div className="mt-6 flex flex-col items-center">
+          <Card
+            className="shadow-lg w-full max-w-xl"
+            style={{
+              background: '#ffffff', // white
+              borderColor: '#b2dfdb', // light green border
+              borderWidth: 1,
+            }}
+          >
             <CardHeader>
               <CardTitle>Test Configuration</CardTitle>
-              <CardDescription>Enter the details of your test. Fields marked with * are required.</CardDescription>
+              <CardDescription>Enter the details of your test.</CardDescription>
             </CardHeader>
             <CardContent>
               <Form {...form}>
@@ -1009,20 +1253,19 @@ export default function Home() {
                     name="testType"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Test Type *</FormLabel>
+                        <FormLabel>Test Type</FormLabel>
                         <Select onValueChange={(value: TestType) => {
                             field.onChange(value);
                             // Reset fields dependent on test type
                              form.reset({
                                 // Keep fields that should persist across type changes
                                 historicalCsvContent: form.getValues('historicalCsvContent'),
-                                equipmentAgeYears: form.getValues('equipmentAgeYears'),
                                 // Explicitly reset fields that ARE dependent on testType
-                                testType: value, // Keep the newly selected type
-                                standard: 'IEC 60068', // Default standard
-                                initialTemp: INITIAL_RECOVERY_TEMP, // Keep fixed temps
+                                testType: value as FormValues['testType'], // Type assertion ensures compatibility
+                                standard: 'IEC 60068',
+                                initialTemp: INITIAL_RECOVERY_TEMP,
                                 recoveryTemp: INITIAL_RECOVERY_TEMP,
-                                equipment: undefined, // Reset equipment
+                                equipment: undefined,
                                 method: undefined,
                                 method1: undefined,
                                 method2: undefined,
@@ -1042,10 +1285,10 @@ export default function Home() {
                                 vibrationAxis2: undefined,
                                 durationHours2: undefined,
                                 customPowerKw: undefined,
-                            }, {
-                                keepErrors: false, // Clear previous validation errors
-                                keepDirty: true, // Keep track if the form was dirty
-                                keepValues: false, // Don't keep old values unless specified above
+                            } as Partial<FormValues>, {
+                                keepErrors: false,
+                                keepDirty: true,
+                                keepValues: false,
                             });
                             setSelectedFile(null); // Clear selected file display if resetting
                         }} value={field.value ?? ''}>
@@ -1076,17 +1319,16 @@ export default function Home() {
                             name="standard"
                             render={({ field }) => (
                             <FormItem>
-                                <FormLabel>Standard *</FormLabel>
+                                <FormLabel>Standard</FormLabel>
                                 <Select onValueChange={(value) => {
                                      field.onChange(value);
                                      // Reset method and related fields when standard changes
-                                     // Keep testType, equipmentAge, file content
+                                     // Keep testType, file content
                                      form.reset({
-                                         testType: form.getValues('testType'),
-                                         standard: value,
+                                         testType: form.getValues('testType') as FormValues['testType'],
+                                         standard: value as Standard,
                                          initialTemp: INITIAL_RECOVERY_TEMP,
                                          recoveryTemp: INITIAL_RECOVERY_TEMP,
-                                         equipmentAgeYears: form.getValues('equipmentAgeYears'),
                                          historicalCsvContent: form.getValues('historicalCsvContent'),
                                          // Reset everything else related to method/params
                                          equipment: undefined,
@@ -1109,7 +1351,7 @@ export default function Home() {
                                          vibrationAxis2: undefined,
                                          durationHours2: undefined,
                                          customPowerKw: undefined,
-                                     }, { keepErrors: false, keepDirty: true, keepValues: false });
+                                     } as Partial<FormValues>, { keepErrors: false, keepDirty: true, keepValues: false });
                                  }} value={field.value ?? ''}>
                                 <FormControl><SelectTrigger><SelectValue placeholder="Select Standard" /></SelectTrigger></FormControl>
                                 <SelectContent>
@@ -1131,7 +1373,7 @@ export default function Home() {
                             name="method" // Generic name for single method
                             render={({ field }) => (
                                 <FormItem>
-                                <FormLabel>Method *</FormLabel>
+                                <FormLabel>Method</FormLabel>
                                 <Select onValueChange={(value) => {
                                      field.onChange(value);
                                      // Reset specific fields when method changes, keep others
@@ -1147,7 +1389,7 @@ export default function Home() {
                                         durationCycles: undefined,
                                         vibrationAxis: undefined,
                                         // Do NOT reset combined fields here
-                                      }, { keepErrors: false, keepDirty: true, keepValues: true }); // Keep other values
+                                      } as Partial<FormValues>, { keepErrors: false, keepDirty: true, keepValues: true }); // Keep other values
 
                                  }} value={field.value ?? ''} >
                                     <FormControl><SelectTrigger><SelectValue placeholder={`Select ${testType} method`} /></SelectTrigger></FormControl>
@@ -1176,7 +1418,7 @@ export default function Home() {
                         <>
                             {/* Method 1 Group */}
                             <Card className="p-4 border rounded-md bg-muted/30">
-                                <Label className="font-semibold">Part 1 Configuration *</Label>
+                                <Label className="font-semibold">Part 1 Configuration</Label>
                                 <Separator className="my-2"/>
                                 <FormField
                                     control={form.control}
@@ -1197,7 +1439,7 @@ export default function Home() {
                                                   durationHours1: undefined,
                                                   durationCycles1: undefined,
                                                   // Don't reset vibrationAxis1 as it doesn't exist
-                                              }, { keepErrors: false, keepDirty: true, keepValues: true });
+                                              } as Partial<FormValues>, { keepErrors: false, keepDirty: true, keepValues: true });
                                         }} value={field.value ?? ''} >
                                             <FormControl><SelectTrigger><SelectValue placeholder="Select first method (e.g., Thermal)" /></SelectTrigger></FormControl>
                                             <SelectContent>
@@ -1211,7 +1453,7 @@ export default function Home() {
                                 />
                                  {method1 && <div className="space-y-4 pl-4 border-l-2 border-border ml-1 mt-4">
                                     {renderMethodSpecificFields(method1, true, 1)}
-                                </div>}
+                                 </div>}
                             </Card>
 
                             {/* Method 2 Group */}
@@ -1239,7 +1481,7 @@ export default function Home() {
                                                   // rateOfChange2: undefined,
                                                   // variant2: undefined,
                                                   // durationCycles2: undefined,
-                                              }, { keepErrors: false, keepDirty: true, keepValues: true });
+                                              } as Partial<FormValues>, { keepErrors: false, keepDirty: true, keepValues: true });
                                         }} value={field.value ?? ''}>
                                             <FormControl><SelectTrigger><SelectValue placeholder="Select second method (e.g., Vibration)" /></SelectTrigger></FormControl>
                                             <SelectContent>
@@ -1262,13 +1504,13 @@ export default function Home() {
                     {/* Custom Configuration (if standard is 'none') */}
                     {standard === 'none' && testType && ( // Ensure testType is selected
                          <div className="p-4 border rounded-md bg-muted/50 space-y-4">
-                             <p className="text-sm font-medium text-center">Custom Test Configuration</p>
+                             <p className="text-sm font-medium text-center">Tests Configuration</p>
                              <FormField
                                 control={form.control}
                                 name="customPowerKw"
                                 render={({ field }) => (
                                   <FormItem>
-                                    <FormLabel>Estimated Power (kW) *</FormLabel>
+                                    <FormLabel>Consumed Power (kW) *</FormLabel>
                                     <FormControl><Input type="number" step="0.1" placeholder="Enter power in kW" {...field} value={field.value ?? ''} onChange={(e) => handleNumberInputChange(field, e)}/></FormControl>
                                     <FormMessage />
                                   </FormItem>
@@ -1317,7 +1559,7 @@ export default function Home() {
                       name="equipment"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Equipment *</FormLabel>
+                          <FormLabel>Equipment</FormLabel>
                           <Select
                               onValueChange={field.onChange}
                               value={field.value ?? ''}
@@ -1353,64 +1595,23 @@ export default function Home() {
                   )}
 
 
-                 {/* Predictive Maintenance Section */}
-                 <Separator className="my-6" />
-                  <div className="space-y-4">
-                    <h3 className="text-lg font-semibold">Predictive Maintenance (Optional)</h3>
-                     <FormField
-                        control={form.control}
-                        name="equipmentAgeYears"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Equipment Age (Years)</FormLabel>
-                            <FormControl>
-                              <Input type="number" min="0" placeholder="Enter equipment age" {...field}
-                              value={field.value ?? ''} // Use empty string for undefined
-                              onChange={(e) => handleNumberInputChange(field, e)}
-                              />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                     <FormItem>
-                        <FormLabel>Historical Maintenance Data (CSV)</FormLabel>
-                         <FormControl>
-                            <Input
-                                type="file"
-                                accept=".csv, text/csv" // Simplified accept types
-                                onChange={handleFileChange}
-                                className="file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20"
-                            />
-                        </FormControl>
-                         <FormDescription>
-                          Upload a CSV: dates, activities, costs, parts, fluid replacements. Required if age is provided.
-                        </FormDescription>
-                         {selectedFile && <p className="text-sm text-muted-foreground mt-1">Selected: {selectedFile.name}</p>}
-                         {/* Display validation error for the hidden CSV content field if applicable */}
-                          <FormField
-                              control={form.control}
-                              name="historicalCsvContent"
-                              render={({ fieldState }) => (
-                                 fieldState.error ? <FormMessage>{fieldState.error.message}</FormMessage> : null
-                              )}
-                          />
-                      </FormItem>
-                  </div>
+             
+              
+               
 
-                  <Button type="submit" className="w-full" disabled={isLoading}>
-                    {isLoading ? (
-                      <>
-                        <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                        </svg>
-                        Calculating...
-                      </>
-                    ) : (
-                      'Calculate Costs'
-                    )}
-                  </Button>
+                  <Button type="submit" className="w-full btn-black-white" disabled={isLoading}>
+  {isLoading ? (
+    <>
+      <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+      </svg>
+      Calculating...
+    </>
+  ) : (
+    'Calculate Costs'
+  )}
+</Button>
                    {/* Display general form error (less common now with Zod refinements) */}
                     {form.formState.errors.root && (
                         <p className="text-sm text-destructive text-center mt-2">{form.formState.errors.root.message}</p>
@@ -1427,136 +1628,34 @@ export default function Home() {
 
         {/* Results Column */}
         <div className="lg:col-span-2 space-y-8">
-          {/* Cost & Energy Results */}
-          <Card className="shadow-lg">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Zap className="text-primary" /> Estimated Results
-              </CardTitle>
-              <CardDescription>Breakdown of estimated costs and energy consumption.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {isLoading && !results && (
-                <div className="space-y-4">
-                    <Skeleton className="h-8 w-3/4" />
-                    <Skeleton className="h-6 w-1/2" />
-                    <Skeleton className="h-6 w-2/3" />
-                    <Skeleton className="h-6 w-1/2" />
-                     <Skeleton className="h-6 w-1/3" /> {/* Added for Additional Cost */}
-                    <Skeleton className="h-8 w-1/2 mt-4" />
-                </div>
-              )}
-              {!isLoading && !results && (
-                <p className="text-muted-foreground text-center py-8">
-                  Enter test details and click "Calculate Costs" to see the results.
-                </p>
-              )}
-              {results && (
-                <>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <ResultItem icon={<Zap className="text-yellow-500" />} label="Energy Consumption" value={`${results.energyConsumptionkWh.toFixed(2)} kWh`} />
-                    <ResultItem icon={<Euro className="text-green-600" />} label="Energy Cost" value={`€${results.energyCost.toFixed(2)}`} />
-                    <ResultItem icon={<Wrench className="text-gray-500" />} label="Fixed Costs (RH, Transport, Equip. Op.)" value={`€${results.totalFixedCosts.toFixed(2)}`} />
-                    <ResultItem icon={<TrendingUp className="text-orange-500" />} label="Additional Cost (e.g., Age)" value={`€${results.additionalCost.toFixed(2)}`} />
-                     <ResultItem icon={<Leaf className="text-accent" />} label="Carbon Footprint" value={`${results.carbonFootprintKgCO2.toFixed(2)} kg CO₂`} />
-                  </div>
-                  <Separator />
-                   <div className="text-center pt-4">
-                     <p className="text-lg font-semibold">Total Estimated Cost</p>
-                     <p className="text-3xl font-bold text-primary">€{results.totalCost.toFixed(2)}</p>
-                   </div>
-                </>
-              )}
-            </CardContent>
-          </Card>
-
-           {/* Predictive Maintenance Results */}
-           {(isLoading || maintenancePrediction || (form.formState.isSubmitted && (historicalCsvContent || equipmentAgeYears))) && ( // Show card if loading, has results, or form submitted with partial/full maintenance inputs
-            <Card className="shadow-lg">
-                <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                    <TrendingUp className="text-primary" /> Predictive Maintenance Analysis
-                </CardTitle>
-                <CardDescription>Insights based on historical data (if provided).</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                 {isLoading && !maintenancePrediction && (equipmentAgeYears && historicalCsvContent) && ( // Show skeleton only when loading AND both maintenance inputs are provided
-                     <div className="space-y-4">
-                        <Skeleton className="h-6 w-1/2" />
-                        <Skeleton className="h-6 w-1/2" />
-                        <Skeleton className="h-6 w-1/4" />
-                        <Skeleton className="h-10 w-full" />
-                    </div>
-                 )}
-                {!isLoading && !maintenancePrediction && form.formState.isSubmitted && (historicalCsvContent || equipmentAgeYears) && !(historicalCsvContent && equipmentAgeYears) && ( // Show specific message if submitted but missing data (via Zod)
-                    <p className="text-destructive text-center py-4">
-                       Provide both equipment age and historical data (CSV) for maintenance prediction.
-                    </p>
-                 )}
-                 {!isLoading && !maintenancePrediction && !historicalCsvContent && !equipmentAgeYears && ( // Show prompt if no maintenance input provided and not loading/submitted
-                    <p className="text-muted-foreground text-center py-4">
-                      Optionally provide equipment age and historical data (CSV) for predictive analysis.
-                    </p>
-                 )}
-                {maintenancePrediction && (
-                    <>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        <ResultItem icon={<Euro className="text-orange-500" />} label="Predicted Maintenance Cost (Next Year)" value={`€${maintenancePrediction.predictedMaintenanceCost.toFixed(2)}`} />
-                        <ResultItem icon={<Droplets className="text-blue-400" />} label="Predicted Fluid Replacement Cost (Next Year)" value={`€${maintenancePrediction.fluidReplacementCost.toFixed(2)}`} />
-                        <ResultItem icon={<ShieldCheck className="h-5 w-5 text-green-600"/>} label="Reliability Score" value={`${maintenancePrediction.reliabilityScore}/100`} />
-                    </div>
-                     <Separator className="my-4" />
-                      <div>
-                        <h4 className="font-semibold mb-2">Suggested Maintenance Actions:</h4>
-                        <p className="text-sm text-muted-foreground whitespace-pre-line">{maintenancePrediction.suggestedMaintenanceActions}</p>
-                      </div>
-                    </>
-                )}
-                </CardContent>
-            </Card>
-          )}
-
-          {/* Investment Suggestion */}
-           {results && (
-             <Card className="bg-accent/10 border-accent shadow-lg">
-                <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-accent">
-                    <Leaf /> Investment Opportunity: Go Solar!
-                </CardTitle>
-                <CardDescription className="text-accent-foreground/80">
-                    See how investing in photovoltaic panels could significantly reduce your testing costs and environmental impact.
-                </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                 <p>
-                   By installing solar panels at our lab, the energy cost for your test (estimated at <span className="font-semibold">€{results.energyCost.toFixed(2)}</span>) could be potentially eliminated.
-                 </p>
-                  <p>
-                    This also means a reduction in the carbon footprint (<span className="font-semibold">{results.carbonFootprintKgCO2.toFixed(2)} kg CO₂</span>), contributing to a greener testing process.
-                  </p>
-                   <Alert className="bg-background border-primary/50">
-                        <Zap className="h-4 w-4 text-primary" />
-                        <AlertTitle className="text-primary">Potential Savings</AlertTitle>
-                        <AlertDescription>
-                         {/* Calculate potential savings more accurately */}
-                         The potential saving by eliminating energy cost is <span className="font-bold">€{results.energyCost.toFixed(2)}</span>.
-                         This could reduce your total test cost towards <span className="font-bold">€{(results.totalCost - results.energyCost).toFixed(2)}</span>!
-                         Partner with us for sustainable and cost-effective testing solutions.
-                        </AlertDescription>
-                    </Alert>
-
-                </CardContent>
-                 <CardFooter>
-                     <Button variant="outline" className="border-accent text-accent hover:bg-accent/20">Learn More About Our Green Initiatives</Button>
-                 </CardFooter>
-             </Card>
-           )}
+          {/* View Results Report Button */}
+          <div className="flex justify-center mt-8">
+            <Button
+              className="btn-black-white"
+              onClick={() => {
+                // Save results to localStorage for the results page to access
+                if (results) {
+                  localStorage.setItem('testResults', JSON.stringify(results));
+                  window.location.href = '/results'; // Use window.location for navigation to ensure client-side routing
+                } else {
+                  alert('Please calculate costs first.');
+                }
+              }}
+              disabled={!results}
+            >
+              View Results Report
+            </Button>
+          </div>
+          {/* Predictive Maintenance Results and Investment Suggestion remain here */}
+          {/* ...existing code for Predictive Maintenance Results and Investment Suggestion... */}
         </div>
       </div>
 
        {/* Footer */}
-       <footer className="mt-12 text-center text-sm text-muted-foreground">
-            <p>&copy; {new Date().getFullYear()} EcoTest Insight - ACTIA Engineering Services Tunisia. All rights reserved.</p>
+       <footer className="mt-12 text-center text-sm footer-custom-color">
+            <p>
+              &copy; {new Date().getFullYear()} © Copyright  2025 Testing & Qualification Laboratory | Powered by ACTIA Engineering Services Tunisia.
+            </p>
        </footer>
     </div>
   );
@@ -1571,11 +1670,15 @@ interface ResultItemProps {
 
 function ResultItem({ icon, label, value }: ResultItemProps) {
     return (
-        <div className="flex items-center space-x-3 p-3 bg-secondary/50 rounded-md border"> {/* Added border */}
-            <div className="flex-shrink-0 h-6 w-6 flex items-center justify-center">{icon}</div> {/* Sized icon container */}
+        <div
+          className="flex items-center space-x-3 p-3 rounded-md border result-item-bg"
+        >
+            <div className="flex-shrink-0 h-6 w-6 flex items-center justify-center result-item-icon">
+                {icon}
+            </div>
             <div>
-                <p className="text-sm font-medium text-muted-foreground">{label}</p>
-                <p className="text-lg font-semibold">{value}</p>
+                <p className="text-sm font-medium result-item-label">{label}</p>
+                <p className="text-lg font-semibold result-item-value">{value}</p>
             </div>
         </div>
     );

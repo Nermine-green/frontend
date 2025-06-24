@@ -1,0 +1,31 @@
+.logo-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  padding: 12px 24px 0 24px;
+  box-sizing: border-box;
+}
+
+/* IEC logo centered at the top */
+.iec-logo {
+  height: 70px;
+  width: auto;
+  order: 1;
+  /* Removed: position: fixed; top: 16px; left: 50%; transform: translateX(-50%); z-index: 1001; */
+  /* Optional: add drop-shadow or background for visibility */
+  /* background: white; border-radius: 8px; padding: 2px 8px; */
+}
+
+.iso-logo {
+  height: 70px;
+  width: auto;
+  order: 3;
+}
+
+.actia-logo {
+  height: 90px;
+  width: auto;
+  order: 2;
+}
+

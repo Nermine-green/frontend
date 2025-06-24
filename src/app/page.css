@@ -1,0 +1,129 @@
+/* Color variables for the app */
+:root {
+  --color-white: #ffffff;
+  --color-green: #90ab0f;
+  --color-lime-green: #BDD248;
+  --color-light-gray: #bcbcbc;
+  --color-black: #000000;
+}
+
+/* Example: App.css */
+body {
+    background-image: url('/assets/images/actia.png');
+    background-size: cover;
+    background-repeat: no-repeat;
+    background-position: center center;
+    min-height: 100vh;
+}
+
+
+.ecotest-title {
+  color: var(--color-green);
+}
+
+.result-item-bg {
+  background-color: var(--color-white);
+}
+
+.result-item-label {
+  color: var(--color-green);
+}
+
+.result-item-value {
+  color: var(--color-black);
+}
+
+.footer-custom-color {
+  background: var(--color-lime-green);
+  color: var(--color-white);
+}
+
+.text-custom-grey {
+  color: var(--color-black);
+}
+
+.text-primary {
+  color: var(--color-green);
+}
+
+.text-accent {
+  color: var(--color-black);
+}
+
+.bg-muted {
+  background-color: var(--color-white);
+}
+
+.bg-accent {
+  background-color: var(--color-white);
+}
+
+.border-accent {
+  border-color: var(--color-light-gray);
+}
+
+::selection {
+  background: var(--color-lime-green);
+  color: var(--color-white);
+}
+
+::-moz-selection {
+  background: var(--color-lime-green);
+  color: var(--color-white);
+}
+
+::-webkit-selection {
+  background: var(--color-lime-green);
+  color: var(--color-white);
+}
+
+input, textarea, select {
+  caret-color: var(--color-lime-green);
+}
+
+.btn-black-white {
+  background-color: var(--color-black);
+  color: var(--color-white);
+  border: var(--color-lime-green) solid 2px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  border-radius: 6px;
+  padding: 0.5em 1.5em;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.btn-black-white:hover,
+.btn-black-white:focus {
+  background-color: #222;
+}
+
+/* Make sure your React components (means page_big.tsx)use these class names for color styling:
+   - ecotest-title
+   - result-item-bg
+   - result-item-label
+   - result-item-value
+   - footer-custom-color
+   - text-custom-grey
+   - text-primary
+   - text-accent
+   - bg-muted
+   - bg-accent
+   - border-accent
+*/
+
+/* Example usage in React:
+   <h1 className="ecotest-title">EcoTest Insight</h1>
+   <div className="result-item-bg">
+     <span className="result-item-label">Label</span>
+     <span className="result-item-value">Value</span>
+   </div>
+   <footer className="footer-custom-color">...</footer>
+   <span className="text-custom-grey">Some text</span>
+   <span className="text-primary">Primary text</span>
+   <span className="text-accent">Accent text</span>
+   <div className="bg-muted">...</div>
+   <div className="bg-accent">...</div>
+   <div className="border-accent">...</div>
+   <button className="btn-black-white">Click Me</button>
+*/

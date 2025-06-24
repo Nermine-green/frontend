@@ -8,6 +8,8 @@ export interface FixedCosts {
   transport: number;
   /** Hourly operational cost of the specific equipment used. */
   equipmentHourly: number;
+  /** Total estimated cost for all maintenance tasks (from Maintenance Task Cost Calculator). */
+  maintenanceTasksTotal: number;
 }
 
 /**
@@ -29,13 +31,26 @@ export interface CostCalculationResult {
 }
 
 /**
+ * Helper to get the maintenance tasks total cost from localStorage.
+ * Use this in the EnerLab interface to ensure fixed costs match the maintenance interface.
+ */
+export function getMaintenanceTasksTotalFromLocalStorage(): number {
+  if (typeof window !== 'undefined') {
+    const val = localStorage.getItem('maintenanceTasksTotal');
+    return val ? parseFloat(val) : 0;
+  }
+  return 0;
+}
+
+/**
  * Calculates the total cost and environmental impact of a test.
  *
  * @param durationHours The total effective duration of the test in hours.
  * @param totalPowerConsumptionkW The total power consumption rate of the equipment in kW (can be sum for combined).
  * @param electricityCostEuroPerKWh The cost of electricity in Euros per kWh.
  * @param emissionFactorKgCO2PerKWh The CO₂ emission factor in kg CO₂ per kWh.
- * @param fixedCosts An object containing the fixed cost components (rh, transport, equipmentHourly).
+ * @param fixedCosts An object containing the fixed cost components (rh, transport, equipmentHourly, maintenanceTasksTotal).
+ *        - The maintenanceTasksTotal field should be set to the value calculated in the maintenance interface (from localStorage).
  * @param ageFactor A multiplier (e.g., 1.05 for 5% increase) representing additional costs due to equipment age/condition. Defaults to 1.
  * @returns An object containing the calculated energy consumption, costs, and carbon footprint.
  */
@@ -57,7 +72,8 @@ export function calculateCosts(
   const equipmentOperationalCost = fixedCosts.equipmentHourly * durationHours;
 
   // 4. Calculate Total Fixed Costs (excluding age factor here)
-  const totalFixedCosts = fixedCosts.rh + fixedCosts.transport + equipmentOperationalCost;
+  // Use the total estimated cost for all tasks from the Maintenance Task Cost Calculator
+  const totalFixedCosts = fixedCosts.maintenanceTasksTotal;
 
   // 5. Calculate Additional Cost due to age/condition
   // Applied as a factor to the variable costs (energy + equipment operation)

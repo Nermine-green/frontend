@@ -182,7 +182,7 @@ function useToast() {
         listeners.splice(index, 1)
       }
     }
-  }, [state])
+  }, []) // <-- Fix: remove [state], use [] so effect runs only once
 
   return {
     ...state,
