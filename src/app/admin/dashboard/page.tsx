@@ -35,7 +35,7 @@ export default function Dashboard() {
             <div className="flex justify-between items-center mb-4">
                 <h2 className="text-xl font-semibold">Overview</h2>
                 <div className="relative">
-                    <button className="bg-white px-4 py-2 rounded shadow">Admin ▾</button>
+                    <button className="bg-white px-4 py-2 rounded shadow">Admin</button>
                     {/* dropdown would be placed here */}
                 </div>
             </div>
